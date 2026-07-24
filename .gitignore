@@ -1,0 +1,6 @@
+data.db
+*.db-*
+
+# Local Claude settings / temp files
+.claude/settings.local.json*
+*.tmp.*

@@ -1,0 +1,10 @@
+.git
+.gitignore
+.claude
+docs
+README.md
+Dockerfile
+.dockerignore
+*.db
+*.db-*
+data
