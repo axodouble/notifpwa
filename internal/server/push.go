@@ -2,6 +2,8 @@ package server
 
 import (
 	"encoding/json"
+	"io"
+	"log"
 	"net/http"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
@@ -56,9 +58,11 @@ func (s *Server) broadcast(p pushPayload) (sendResult, error) {
 		}
 		resp, err := sendOne(msg, wp, opts)
 		if err != nil {
+			log.Printf("push: send to %s errored: %v", sub.Endpoint, err)
 			res.Failed++
 			continue
 		}
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<10))
 		resp.Body.Close()
 
 		switch {
@@ -68,6 +72,7 @@ func (s *Server) broadcast(p pushPayload) (sendResult, error) {
 		case resp.StatusCode >= 200 && resp.StatusCode < 300:
 			res.Sent++
 		default:
+			log.Printf("push: send to %s got HTTP %d: %s", sub.Endpoint, resp.StatusCode, body)
 			res.Failed++
 		}
 	}

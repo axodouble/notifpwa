@@ -9,3 +9,4 @@ Dockerfile
 *.db-*
 data
 .env
+docker-compose.yml

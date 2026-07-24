@@ -19,7 +19,7 @@ services:
     restart: unless-stopped
     environment:
       # Used as the contact in the VAPID JWT sent to push services.
-      VAPID_SUBSCRIBER: mailto:you@example.com
+      VAPID_SUBSCRIBER: you@example.com
       API_TOKEN: ${API_TOKEN:-} # Optional API token, if left blank a randomly generated one is used
     volumes:
       - notifpwa-data:/data   # SQLite DB: keys, token, icon, subscriptions
