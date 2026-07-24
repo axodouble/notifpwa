@@ -17,6 +17,7 @@ var webFS embed.FS
 type Config struct {
 	DBPath     string // path to the SQLite file (created if missing)
 	Subscriber string // "mailto:" or URL used in the VAPID JWT
+	Token      string // optional API token; if empty, loaded/generated from the DB
 }
 
 // Server holds shared state for the running application.
@@ -35,7 +36,7 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{store: st, subscriber: cfg.Subscriber}
+	s := &Server{store: st, subscriber: cfg.Subscriber, token: cfg.Token}
 	if err := s.initSecrets(); err != nil {
 		st.close()
 		return nil, err
@@ -74,17 +75,19 @@ func (s *Server) initSecrets() error {
 	}
 	s.vapidPriv, s.vapidPub = priv, pub
 
-	token, err := s.store.getSettingStr("api_token")
-	if err != nil {
-		return err
-	}
-	if token == "" {
-		token = randomHex(32)
-		if err := s.store.setSetting("api_token", []byte(token)); err != nil {
+	if s.token == "" {
+		token, err := s.store.getSettingStr("api_token")
+		if err != nil {
 			return err
 		}
+		if token == "" {
+			token = randomHex(32)
+			if err := s.store.setSetting("api_token", []byte(token)); err != nil {
+				return err
+			}
+		}
+		s.token = token
 	}
-	s.token = token
 
 	name, err := s.store.getSettingStr("app_name")
 	if err != nil {

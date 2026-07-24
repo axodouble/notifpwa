@@ -15,6 +15,7 @@ func main() {
 	srv, err := server.New(server.Config{
 		DBPath:     getenv("DB_PATH", "./data.db"),
 		Subscriber: getenv("VAPID_SUBSCRIBER", "mailto:admin@localhost"),
+		Token:      os.Getenv("API_TOKEN"),
 	})
 	if err != nil {
 		log.Fatalf("start: %v", err)
