@@ -1,0 +1,42 @@
+# Example Docker Compose setup for notifpwa.
+#
+# It runs the app plus Caddy, which fetches and auto-renews a real HTTPS
+# certificate for you. iOS requires HTTPS for both installing the PWA and
+# receiving Web Push, so this is the recommended way to self-host.
+#
+# Setup:
+#   1. Point your domain's DNS A/AAAA record at this host.
+#   2. Replace notify.example.com below with your domain.
+#   3. docker compose up -d
+#   4. docker compose logs app   # grab the admin URL + API token
+#
+# Then open https://your-domain/admin?token=<TOKEN> to set the name/icon,
+# and add the site to your Home Screen on each device.
+
+services:
+  app:
+    build: .            # or: image: notifpwa
+    restart: unless-stopped
+    environment:
+      # Used as the contact in the VAPID JWT sent to push services.
+      VAPID_SUBSCRIBER: mailto:you@example.com
+    volumes:
+      - notifpwa-data:/data   # SQLite DB: keys, token, icon, subscriptions
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    command: caddy reverse-proxy --from notify.example.com --to app:8080
+    volumes:
+      - caddy-data:/data      # persists issued certificates
+      - caddy-config:/config
+
+volumes:
+  notifpwa-data:
+  caddy-data:
+  caddy-config:

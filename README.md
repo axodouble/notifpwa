@@ -62,32 +62,14 @@ outbound HTTPS calls to the push services).
 
 ### Docker Compose with automatic HTTPS
 
-iOS needs HTTPS (see below). This puts [Caddy](https://caddyserver.com) in front
-to fetch and renew a certificate for you — just point your domain's DNS at the
-host and set your real domain + email:
+iOS needs HTTPS (see below). The included [`docker-compose.yml`](docker-compose.yml)
+runs the app plus [Caddy](https://caddyserver.com), which fetches and renews a
+certificate for you. Edit it to set your domain and email, then:
 
-```yaml
-services:
-  app:
-    build: .            # or image: notifpwa
-    restart: unless-stopped
-    volumes:
-      - notifpwa-data:/data
-
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports: ["80:80", "443:443"]
-    command: caddy reverse-proxy --from notify.example.com --to app:8080
-    volumes:
-      - caddy-data:/data
-
-volumes:
-  notifpwa-data:
-  caddy-data:
+```sh
+docker compose up -d
+docker compose logs app   # grab the admin URL + API token
 ```
-
-Run `docker compose up -d`, then `docker compose logs app` to grab your token.
 
 ## HTTPS is required
 
