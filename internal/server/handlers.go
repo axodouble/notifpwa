@@ -19,6 +19,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /sw.js", s.serveStatic("web/sw.js", "text/javascript"))
 	mux.HandleFunc("GET /manifest.webmanifest", s.handleManifest)
 	mux.HandleFunc("GET /icon.png", s.handleIcon)
+	mux.HandleFunc("GET /favicon.ico", s.handleIcon)
 	mux.HandleFunc("POST /api/subscribe", s.handleSubscribe)
 
 	// Token-protected surface. admin.js is static (it reads window.TOKEN,
