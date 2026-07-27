@@ -1,7 +1,9 @@
 package server
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -42,6 +44,16 @@ func openStore(path string) (*store, error) {
 			p256dh     TEXT NOT NULL,
 			auth       TEXT NOT NULL,
 			created_at INTEGER NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS tokens (
+			id           TEXT PRIMARY KEY,
+			label        TEXT NOT NULL DEFAULT '',
+			token_hash   TEXT NOT NULL UNIQUE,
+			prefix       TEXT NOT NULL DEFAULT '',
+			scope_admin  INTEGER NOT NULL DEFAULT 0,
+			scope_send   INTEGER NOT NULL DEFAULT 0,
+			created_at   INTEGER NOT NULL,
+			last_used_at INTEGER NOT NULL DEFAULT 0
 		);
 	`); err != nil {
 		db.Close()
@@ -196,4 +208,80 @@ func (s *store) countSubscriptions() (int, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM subscriptions`).Scan(&n)
 	return n, err
+}
+
+// tokenRecord is one API token's metadata. The secret itself is never stored
+// or returned — only its SHA-256 hash (for lookup) and a short display prefix.
+type tokenRecord struct {
+	ID         string
+	Label      string
+	Prefix     string
+	ScopeAdmin bool
+	ScopeSend  bool
+	CreatedAt  int64
+	LastUsedAt int64
+}
+
+func hashToken(secret string) string {
+	sum := sha256.Sum256([]byte(secret))
+	return hex.EncodeToString(sum[:])
+}
+
+func b2i(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// addToken inserts a token with a caller-supplied secret. Used by createToken
+// (random secret) and by the legacy-token migration (known secret).
+func (s *store) addToken(label, secret string, admin, send bool) (string, error) {
+	id := randomHex(8)
+	prefix := secret
+	if len(prefix) > 6 {
+		prefix = prefix[:6]
+	}
+	_, err := s.db.Exec(`
+		INSERT INTO tokens (id, label, token_hash, prefix, scope_admin, scope_send, created_at, last_used_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+		id, label, hashToken(secret), prefix, b2i(admin), b2i(send), time.Now().Unix())
+	if err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// createToken generates a fresh random secret and stores its hash. The returned
+// secret is the only time the plaintext exists — surface it once, then forget.
+func (s *store) createToken(label string, admin, send bool) (id, secret string, err error) {
+	secret = randomHex(32)
+	id, err = s.addToken(label, secret, admin, send)
+	if err != nil {
+		return "", "", err
+	}
+	return id, secret, nil
+}
+
+// lookupToken finds a token by the hash of the presented secret, returning
+// nil when there is no match. On a hit it bumps last_used_at (best-effort).
+func (s *store) lookupToken(secret string) (*tokenRecord, error) {
+	if secret == "" {
+		return nil, nil
+	}
+	var t tokenRecord
+	var admin, send int
+	err := s.db.QueryRow(`
+		SELECT id, label, prefix, scope_admin, scope_send, created_at, last_used_at
+		FROM tokens WHERE token_hash = ?`, hashToken(secret)).
+		Scan(&t.ID, &t.Label, &t.Prefix, &admin, &send, &t.CreatedAt, &t.LastUsedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	t.ScopeAdmin, t.ScopeSend = admin == 1, send == 1
+	s.db.Exec(`UPDATE tokens SET last_used_at = ? WHERE id = ?`, time.Now().Unix(), t.ID) // best-effort
+	return &t, nil
 }

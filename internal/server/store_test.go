@@ -200,3 +200,37 @@ func TestMigrationUpgradesLegacyDBIdempotently(t *testing.T) {
 		t.Fatalf("created_at after second open = %d, want %d", devs2[0].CreatedAt, seededCreatedAt)
 	}
 }
+
+func TestTokenCreateAndLookup(t *testing.T) {
+	st := newTestStore(t)
+
+	id, secret, err := st.createToken("CI", false, true)
+	if err != nil {
+		t.Fatalf("createToken: %v", err)
+	}
+	if id == "" || len(secret) != 64 {
+		t.Fatalf("id=%q secret len=%d, want non-empty id and 64-char secret", id, len(secret))
+	}
+
+	// The plaintext secret must never be stored.
+	var found int
+	st.db.QueryRow(`SELECT COUNT(*) FROM tokens WHERE token_hash = ?`, secret).Scan(&found)
+	if found != 0 {
+		t.Fatal("plaintext secret found in token_hash column")
+	}
+
+	rec, err := st.lookupToken(secret)
+	if err != nil || rec == nil {
+		t.Fatalf("lookupToken: rec=%v err=%v", rec, err)
+	}
+	if rec.ID != id || rec.ScopeAdmin || !rec.ScopeSend || rec.Prefix != secret[:6] {
+		t.Fatalf("rec = %+v, want send-only with prefix %q", rec, secret[:6])
+	}
+
+	if bad, _ := st.lookupToken("nope"); bad != nil {
+		t.Fatalf("lookupToken(wrong) = %+v, want nil", bad)
+	}
+	if empty, _ := st.lookupToken(""); empty != nil {
+		t.Fatalf("lookupToken(\"\") = %+v, want nil", empty)
+	}
+}
