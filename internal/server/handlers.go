@@ -204,7 +204,7 @@ func (s *Server) requireSend(next http.HandlerFunc) http.HandlerFunc {
 
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthed(r) {
-		http.Error(w, "invalid or missing ?token=", http.StatusUnauthorized)
+		http.Error(w, "unauthorized — sign in with an admin token", http.StatusUnauthorized)
 		return
 	}
 	// If authed by token (not a valid cookie), mint a fresh session so the

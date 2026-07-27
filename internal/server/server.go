@@ -18,7 +18,7 @@ var webFS embed.FS
 type Config struct {
 	DBPath     string // path to the SQLite file (created if missing)
 	Subscriber string // "mailto:" or URL used in the VAPID JWT
-	Token      string // optional API token; if empty, loaded/generated from the DB
+	Token      string // optional root token granting full admin+send access; if empty, the server bootstraps an initial admin token surfaced via InitialToken()
 }
 
 // Server holds shared state for the running application.

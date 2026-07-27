@@ -63,15 +63,6 @@ function scopeBadges(t) {
   return a + s;
 }
 
-async function patchToken(id, patch) {
-  const res = await fetch("/api/tokens/" + id, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  if (!res.ok) throw new Error(await res.text());
-}
-
 async function loadTokens() {
   const box = document.getElementById("tokens");
   try {
@@ -86,9 +77,16 @@ async function loadTokens() {
       row.className = "token-row";
       const meta = document.createElement("div");
       meta.className = "token-meta";
-      meta.innerHTML =
-        `<div class="name">${t.label || "(unnamed)"}</div>` +
-        `<div class="sub">${t.prefix}… · ${scopeBadges(t)}</div>`;
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = t.label || "(unnamed)";
+      const sub = document.createElement("div");
+      sub.className = "sub";
+      sub.append(document.createTextNode(t.prefix + "… · "));
+      const badges = document.createElement("span");
+      badges.innerHTML = scopeBadges(t);
+      sub.append(badges);
+      meta.append(name, sub);
       const controls = document.createElement("span");
       const del = document.createElement("button");
       del.className = "secondary";

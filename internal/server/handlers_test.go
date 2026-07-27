@@ -380,6 +380,57 @@ func TestTokenLockoutGuard(t *testing.T) {
 	}
 }
 
+func TestTokenGuardAllowsWhenAnotherAdminExists(t *testing.T) {
+	s := newTestApp(t) // no root token; bootstrap "Default" admin+send token exists
+	admin := "Bearer " + s.InitialToken()
+
+	// Create a second admin token.
+	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader(`{"label":"admin2","admin":true,"send":false}`))
+	req.Header.Set("Authorization", admin)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create second admin = %d, want 200", rec.Code)
+	}
+	var created struct{ ID, Secret string }
+	json.Unmarshal(rec.Body.Bytes(), &created)
+	admin2 := "Bearer " + created.Secret
+
+	// Find the bootstrap admin token's id.
+	toks, err := s.store.listTokens()
+	if err != nil {
+		t.Fatalf("listTokens: %v", err)
+	}
+	var bootstrapAdminID string
+	for _, tk := range toks {
+		if tk.ID != created.ID && tk.ScopeAdmin {
+			bootstrapAdminID = tk.ID
+		}
+	}
+	if bootstrapAdminID == "" {
+		t.Fatal("could not find bootstrap admin token")
+	}
+
+	// Deleting the bootstrap admin is now allowed, since admin2 still exists.
+	req = httptest.NewRequest("DELETE", "/api/tokens/"+bootstrapAdminID, nil)
+	req.Header.Set("Authorization", admin)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete bootstrap admin (another admin exists) = %d, want 204", rec.Code)
+	}
+
+	// Now admin2 is the last admin; deleting it is refused. The bootstrap
+	// token was just deleted, so authenticate as admin2 itself.
+	req = httptest.NewRequest("DELETE", "/api/tokens/"+created.ID, nil)
+	req.Header.Set("Authorization", admin2)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("delete last admin (admin2) = %d, want 409", rec.Code)
+	}
+}
+
 func TestAdminPageHasTokensUIAndNoInjectedToken(t *testing.T) {
 	s := newTestApp(t)
 	req := httptest.NewRequest("GET", "/admin?token="+s.InitialToken(), nil)
