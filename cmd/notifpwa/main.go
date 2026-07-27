@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"log"
 	"net/http"
 	"os"
@@ -15,6 +16,12 @@ import (
 )
 
 func main() {
+	healthcheck := flag.Bool("healthcheck", false, "probe local /healthz and exit 0/1")
+	flag.Parse()
+	if *healthcheck {
+		os.Exit(runHealthcheck(getenv("PORT", "8080")))
+	}
+
 	port := getenv("PORT", "8080")
 
 	srv, err := server.New(server.Config{
@@ -56,4 +63,19 @@ func getenv(key, def string) string {
 		return v
 	}
 	return def
+}
+
+// runHealthcheck is used by the container HEALTHCHECK: it hits the local
+// /healthz and maps the result to a process exit code.
+func runHealthcheck(port string) int {
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get("http://127.0.0.1:" + port + "/healthz")
+	if err != nil {
+		return 1
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusOK {
+		return 0
+	}
+	return 1
 }
