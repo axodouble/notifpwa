@@ -36,10 +36,14 @@ self.addEventListener("notificationclick", (event) => {
     const i = Number(event.action);
     if (data.actionUrls[i]) url = data.actionUrls[i];
   }
+  // client.url from clients.matchAll() is always absolute, while `url` here
+  // is typically a relative path (e.g. "/", "/a"). Resolve against the SW's
+  // own origin so the comparison below can actually match an open tab.
+  const target = new URL(url, self.location.origin).href;
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {
-        if ("focus" in client && client.url === url) return client.focus();
+        if ("focus" in client && client.url === target) return client.focus();
       }
       return self.clients.openWindow(url);
     })
