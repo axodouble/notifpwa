@@ -34,3 +34,23 @@ func TestRateLimiterIsolatesKeys(t *testing.T) {
 		t.Fatal("key b is independent and should be allowed")
 	}
 }
+
+func TestRateLimiterBoundsBucketCount(t *testing.T) {
+	rl := newRateLimiter(2, 1)
+	rl.maxBuckets = 3
+	base := time.Unix(1000, 0)
+
+	for i := 0; i < 20; i++ {
+		key := string(rune('a' + i))
+		now := base.Add(time.Duration(i) * time.Millisecond)
+		rl.allow(key, now)
+	}
+
+	rl.mu.Lock()
+	n := len(rl.buckets)
+	rl.mu.Unlock()
+
+	if n > rl.maxBuckets {
+		t.Fatalf("len(rl.buckets) = %d, want <= %d", n, rl.maxBuckets)
+	}
+}
