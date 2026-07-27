@@ -20,6 +20,11 @@ Works on iOS 16.4+, Android, and desktop browsers.
      -d '{"title":"Hello","body":"It works","url":"/"}'
    ```
 
+### Health check
+
+`GET /healthz` returns `200 ok` when the app and database are reachable. The
+Docker image runs this via a `HEALTHCHECK` so `docker ps` reports health.
+
 ## Run it
 
 ```sh
@@ -96,7 +101,11 @@ Any equivalent (nginx + certbot, Cloudflare Tunnel, etc.) works too.
 
 | Endpoint | Auth | Body | Description |
 |----------|------|------|-------------|
-| `POST /api/send` | `Bearer` | `{"title","body","url"?}` | Push to all devices. Returns `{"sent","failed","pruned"}`. |
+| `POST /api/send` | `Bearer` | `{"title","body","url"?,"tag"?,"image"?,"actions"?,"urgency"?}` | Push to all devices. `actions` is up to 2 `{title,url}` buttons; `urgency` is `very-low`/`low`/`normal`/`high`. Returns `{"sent","failed","pruned"}`. |
+| `GET /api/devices` | `Bearer` | — | List subscribed devices with label, user-agent, and timestamps. |
+| `POST /api/devices/label` | `Bearer` | `{"endpoint","label"}` | Set a friendly label for a device. |
+| `DELETE /api/devices` | `Bearer` | `{"endpoint"}` | Remove one device. |
+| `POST /api/rotate-token` | `Bearer` | — | Generate a new API token; the old one stops working immediately. |
 | `POST /api/config` | `Bearer` | multipart (`name`, `icon`) | Update app name / icon. |
 | `POST /api/subscribe` | none | PushSubscription JSON | Register a device (called by the page). |
 
