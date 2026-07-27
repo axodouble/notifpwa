@@ -137,9 +137,10 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid or missing ?token=", http.StatusUnauthorized)
 		return
 	}
-	// If authed by token (not cookie), mint a session so the token stops
-	// appearing in the URL on subsequent navigation.
-	if _, err := r.Cookie(adminCookie); err != nil {
+	// If authed by token (not a valid cookie), mint a fresh session so the
+	// token stops appearing in the URL on subsequent navigation. This also
+	// covers a stale/expired cookie presented alongside a valid ?token=.
+	if c, err := r.Cookie(adminCookie); err != nil || !s.sessions.valid(c.Value, time.Now()) {
 		id := s.sessions.create(time.Now())
 		http.SetCookie(w, &http.Cookie{
 			Name:     adminCookie,

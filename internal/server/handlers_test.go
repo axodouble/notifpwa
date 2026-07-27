@@ -239,6 +239,37 @@ func TestAdminSetsAndAcceptsCookie(t *testing.T) {
 	}
 }
 
+func TestAdminReMintsExpiredCookie(t *testing.T) {
+	s := newTestApp(t)
+
+	// A cookie value that was never issued by the session store is a clean
+	// "present but invalid" case.
+	req := httptest.NewRequest("GET", "/admin?token="+s.getToken(), nil)
+	req.AddCookie(&http.Cookie{Name: adminCookie, Value: "stale-never-issued"})
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	var fresh *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == adminCookie {
+			fresh = c
+		}
+	}
+	if fresh == nil {
+		t.Fatal("no admin cookie set for stale cookie + valid token")
+	}
+	if fresh.Value == "" || fresh.Value == "stale-never-issued" {
+		t.Fatalf("cookie value = %q, want a fresh non-empty session id", fresh.Value)
+	}
+	if !s.sessions.valid(fresh.Value, time.Now()) {
+		t.Fatal("newly minted cookie should be a valid session")
+	}
+}
+
 func TestLogoutInvalidatesSession(t *testing.T) {
 	s := newTestApp(t)
 	id := s.sessions.create(time.Now())
