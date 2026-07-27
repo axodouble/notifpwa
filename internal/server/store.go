@@ -52,6 +52,9 @@ func openStore(path string) (*store, error) {
 
 func (s *store) close() error { return s.db.Close() }
 
+// ping verifies the database connection is alive.
+func (s *store) ping() error { return s.db.Ping() }
+
 // getSetting returns the raw bytes for a key, or nil if it does not exist.
 func (s *store) getSetting(key string) ([]byte, error) {
 	var v []byte

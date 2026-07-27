@@ -21,6 +21,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /icon.png", s.handleIcon)
 	mux.HandleFunc("GET /favicon.ico", s.handleIcon)
 	mux.HandleFunc("POST /api/subscribe", s.handleSubscribe)
+	mux.HandleFunc("GET /healthz", s.handleHealthz)
 
 	// Token-protected surface. admin.js is static (it reads window.TOKEN,
 	// which the token-gated admin page injects), so it needs no gate itself.
@@ -199,4 +200,13 @@ func (s *Server) requireToken(next http.HandlerFunc) http.HandlerFunc {
 // tokenOK compares in constant time to avoid leaking the token via timing.
 func (s *Server) tokenOK(candidate string) bool {
 	return subtle.ConstantTimeCompare([]byte(candidate), []byte(s.token)) == 1
+}
+
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	if err := s.store.ping(); err != nil {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write([]byte("ok"))
 }

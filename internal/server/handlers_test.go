@@ -103,3 +103,16 @@ func TestManifestReflectsAppName(t *testing.T) {
 		t.Fatalf("name = %v, want My Alerts", m["name"])
 	}
 }
+
+func TestHealthzOK(t *testing.T) {
+	s := newTestApp(t)
+	req := httptest.NewRequest("GET", "/healthz", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if strings.TrimSpace(rec.Body.String()) != "ok" {
+		t.Fatalf("body = %q, want ok", rec.Body.String())
+	}
+}
