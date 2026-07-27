@@ -2,9 +2,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"notifpwa/internal/server"
 )
@@ -26,8 +31,23 @@ func main() {
 	log.Printf("Open the admin page: http://localhost:%s/admin?token=%s", port, srv.Token())
 	log.Printf("API token (send with 'Authorization: Bearer <token>'): %s", srv.Token())
 
-	if err := http.ListenAndServe(":"+port, srv.Handler()); err != nil {
-		log.Fatal(err)
+	httpSrv := &http.Server{Addr: ":" + port, Handler: srv.Handler()}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("serve: %v", err)
+		}
+	}()
+
+	<-ctx.Done()
+	log.Print("shutting down…")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := httpSrv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("shutdown: %v", err)
 	}
 }
 
