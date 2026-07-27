@@ -87,6 +87,26 @@ func TestSendWithValidTokenBroadcasts(t *testing.T) {
 	}
 }
 
+func TestSubscribeRateLimited(t *testing.T) {
+	s := newTestApp(t)
+	s.limiter = newRateLimiter(1, 0) // burst 1, no refill
+
+	body := `{"endpoint":"https://push/x","keys":{"p256dh":"abc","auth":"def"}}`
+	do := func() int {
+		req := httptest.NewRequest("POST", "/api/subscribe", strings.NewReader(body))
+		req.RemoteAddr = "203.0.113.7:5555"
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := do(); code != http.StatusNoContent {
+		t.Fatalf("1st subscribe = %d, want 204", code)
+	}
+	if code := do(); code != http.StatusTooManyRequests {
+		t.Fatalf("2nd subscribe = %d, want 429", code)
+	}
+}
+
 func TestManifestReflectsAppName(t *testing.T) {
 	s := newTestApp(t)
 	s.store.setSetting("app_name", []byte("My Alerts"))

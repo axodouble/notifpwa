@@ -27,6 +27,7 @@ type Server struct {
 	vapidPriv  string
 	token      string
 	subscriber string
+	limiter    *rateLimiter
 }
 
 // New opens (or creates) the database and loads/generates the VAPID keypair,
@@ -37,6 +38,7 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{store: st, subscriber: cfg.Subscriber, token: cfg.Token}
+	s.limiter = newRateLimiter(5, 1) // burst 5, refill 1/sec per IP
 	if err := s.initSecrets(); err != nil {
 		st.close()
 		return nil, err

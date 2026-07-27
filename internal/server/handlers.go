@@ -20,7 +20,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /manifest.webmanifest", s.handleManifest)
 	mux.HandleFunc("GET /icon.png", s.handleIcon)
 	mux.HandleFunc("GET /favicon.ico", s.handleIcon)
-	mux.HandleFunc("POST /api/subscribe", s.handleSubscribe)
+	mux.HandleFunc("POST /api/subscribe", s.rateLimit(s.handleSubscribe))
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 
 	// Token-protected surface. admin.js is static (it reads window.TOKEN,

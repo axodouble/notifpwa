@@ -11,7 +11,7 @@ import (
 
 func newTestApp(t *testing.T) *Server {
 	t.Helper()
-	s := &Server{store: newTestStore(t), subscriber: "mailto:test@localhost"}
+	s := &Server{store: newTestStore(t), subscriber: "mailto:test@localhost", limiter: newRateLimiter(5, 1)}
 	if err := s.initSecrets(); err != nil {
 		t.Fatalf("initSecrets: %v", err)
 	}
