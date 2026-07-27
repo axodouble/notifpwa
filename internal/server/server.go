@@ -82,7 +82,7 @@ func (s *Server) initSecrets() error {
 	}
 	s.vapidPriv, s.vapidPub = priv, pub
 
-	if s.token == "" {
+	if s.getToken() == "" {
 		token, err := s.store.getSettingStr("api_token")
 		if err != nil {
 			return err

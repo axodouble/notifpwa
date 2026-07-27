@@ -71,7 +71,7 @@ func TestSendWithValidTokenBroadcasts(t *testing.T) {
 	}
 
 	req := httptest.NewRequest("POST", "/api/send", strings.NewReader(`{"title":"hi","body":"yo"}`))
-	req.Header.Set("Authorization", "Bearer "+s.token)
+	req.Header.Set("Authorization", "Bearer "+s.getToken())
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
@@ -129,7 +129,7 @@ func TestAdminSetsAndAcceptsCookie(t *testing.T) {
 	s := newTestApp(t)
 
 	// Valid ?token= issues a session cookie.
-	req := httptest.NewRequest("GET", "/admin?token="+s.token, nil)
+	req := httptest.NewRequest("GET", "/admin?token="+s.getToken(), nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -191,7 +191,7 @@ func TestHealthzOK(t *testing.T) {
 
 func TestRotateTokenChangesAcceptedToken(t *testing.T) {
 	s := newTestApp(t)
-	old := s.token
+	old := s.getToken()
 
 	req := httptest.NewRequest("POST", "/api/rotate-token", nil)
 	req.Header.Set("Authorization", "Bearer "+old)
@@ -205,7 +205,7 @@ func TestRotateTokenChangesAcceptedToken(t *testing.T) {
 	if out.Token == "" || out.Token == old {
 		t.Fatalf("token = %q, want a new non-empty value", out.Token)
 	}
-	if s.token != out.Token {
+	if s.getToken() != out.Token {
 		t.Fatalf("in-memory token not updated")
 	}
 
