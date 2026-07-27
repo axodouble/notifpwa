@@ -8,57 +8,116 @@
   <link rel="icon" href="/icon.png">
   <link rel="apple-touch-icon" href="/icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="theme-color" content="#0f1115">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f1edee">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#182027">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Lora:ital,wght@0,400..700;1,400..600&family=Rethink+Sans:wght@400..700&display=swap" rel="stylesheet">
   <script>window.VAPID_PUBLIC_KEY = "{{.VapidPublicKey}}";</script>
   <style>
-    :root { color-scheme: dark; }
+    :root {
+      color-scheme: light dark;
+
+      --color-lobster-deep:   #c0424f;
+      --color-lobster-deeper: #a5333f;
+      --color-dim-grey:       #686963;
+      --color-teal-deep:      #6f8b86;
+      --color-charcoal:       #3d5467;
+      --color-coarse-wool:    #182027;
+      --color-smoke:          #f1edee;
+      --color-rule:           #d4d9d3;
+
+      --bg:      light-dark(var(--color-smoke), var(--color-coarse-wool));
+      --surface: light-dark(#fbf9f9, #1e2831);
+      --fg:      light-dark(var(--color-charcoal), var(--color-smoke));
+      --muted:   var(--color-dim-grey);
+      --rule:    light-dark(var(--color-rule), var(--color-charcoal));
+      --accent:  var(--color-lobster-deep);
+      --accent-hover: var(--color-lobster-deeper);
+      --ok:      light-dark(#4f736d, #8aa29e);
+      --err:     var(--color-lobster-deep);
+      --code-bg: rgba(192, 66, 79, 0.06);
+
+      --font-sans:  "Rethink Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --font-mono:  "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      --font-serif: "Lora", Georgia, serif;
+    }
     * { box-sizing: border-box; }
     body {
       margin: 0; min-height: 100vh;
-      font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f1115; color: #e7e9ee;
+      font: 400 16px/1.6 var(--font-sans);
+      background: var(--bg); color: var(--fg);
       display: flex; align-items: center; justify-content: center;
       padding: 24px;
+      -webkit-font-smoothing: antialiased;
     }
     .card {
       width: 100%; max-width: 420px; text-align: center;
-      background: #171a21; border: 1px solid #262b36; border-radius: 18px;
-      padding: 32px 24px;
+      background: var(--surface); border: 1px solid var(--rule); border-radius: 14px;
+      padding: 40px 28px;
     }
-    img.icon { width: 88px; height: 88px; border-radius: 20px; }
-    h1 { font-size: 22px; margin: 16px 0 4px; }
-    p.sub { color: #99a0af; margin: 0 0 24px; }
+    img.icon {
+      width: 84px; height: 84px; border-radius: 18px;
+      border: 1px solid var(--rule);
+    }
+    .eyebrow {
+      font-family: var(--font-mono); font-size: 12px; font-weight: 500;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--accent); margin: 22px 0 0;
+    }
+    h1 {
+      font-family: var(--font-serif); font-weight: 600;
+      font-size: 30px; line-height: 1.15; letter-spacing: -0.01em;
+      margin: 6px 0 6px; color: var(--fg);
+    }
+    p.sub { color: var(--muted); margin: 0 0 26px; font-size: 15px; }
     button {
-      width: 100%; padding: 14px 18px; font-size: 16px; font-weight: 600;
-      border: 0; border-radius: 12px; cursor: pointer;
-      background: #6366f1; color: #fff;
+      width: 100%; padding: 14px 18px; font-size: 15px; font-weight: 600;
+      font-family: var(--font-sans);
+      border: 0; border-radius: 10px; cursor: pointer;
+      background: var(--accent); color: var(--color-smoke);
+      transition: background 0.15s ease;
     }
-    button:disabled { background: #2a2f3a; color: #6b7280; cursor: default; }
+    button:hover:not(:disabled) { background: var(--accent-hover); }
+    button:disabled {
+      background: transparent; color: var(--muted);
+      border: 1px solid var(--rule); cursor: default;
+    }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .status {
-      margin-top: 18px; padding: 12px 14px; border-radius: 10px;
-      font-size: 14px; background: #12151c; border: 1px solid #262b36;
+      margin-top: 20px; padding: 12px 14px; border-radius: 9px;
+      font-size: 14px; text-align: left;
+      background: var(--bg); border: 1px solid var(--rule); color: var(--fg);
     }
-    .status.ok { border-color: #1f6f43; color: #7ee2a8; }
-    .status.err { border-color: #7a2330; color: #f5a6b0; }
+    .status.ok  { border-color: var(--ok);  color: var(--ok); }
+    .status.err { border-color: var(--err); color: var(--err); }
     .ios {
-      margin-top: 20px; font-size: 13px; color: #8b92a1; text-align: left;
-      background: #12151c; border: 1px solid #262b36; border-radius: 10px; padding: 14px;
+      margin-top: 22px; font-size: 13px; line-height: 1.6; color: var(--muted); text-align: left;
+      background: var(--bg); border: 1px solid var(--rule); border-radius: 9px; padding: 14px 16px;
     }
-    .ios b { color: #c7ccd6; }
+    .ios .ios-label {
+      display: block; font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+      letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent);
+      margin-bottom: 8px;
+    }
+    .ios b { color: var(--fg); font-weight: 600; }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
 </head>
 <body>
   <div class="card">
     <img class="icon" src="/icon.png" alt="">
+    <p class="eyebrow">Push notifications</p>
     <h1>{{.AppName}}</h1>
     <p class="sub">Get push notifications on this device</p>
     <button id="enable">Enable notifications</button>
     <div id="status" class="status">Checking…</div>
     <div class="ios" id="ios-hint" hidden>
-      <b>On iPhone / iPad:</b> tap the Share icon → <b>Add to Home Screen</b>,
-      then open the app from your Home Screen and press Enable. Notifications
-      only work from the installed app (iOS 16.4+).
+      <span class="ios-label">On iPhone / iPad</span>
+      Tap the Share icon → <b>Add to Home Screen</b>, then open the app from your
+      Home Screen and press Enable. Notifications only work from the installed
+      app (iOS 16.4+).
     </div>
   </div>
   <script src="/app.js"></script>

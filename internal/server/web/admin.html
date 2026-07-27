@@ -5,42 +5,97 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.AppName}} — Admin</title>
   <link rel="icon" href="/icon.png">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f1edee">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#182027">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Lora:ital,wght@0,400..700;1,400..600&family=Rethink+Sans:wght@400..700&display=swap" rel="stylesheet">
   <script>window.TOKEN = "{{.Token}}";</script>
   <style>
-    :root { color-scheme: dark; }
+    :root {
+      color-scheme: light dark;
+
+      --color-lobster-deep:   #c0424f;
+      --color-lobster-deeper: #a5333f;
+      --color-dim-grey:       #686963;
+      --color-teal-deep:      #6f8b86;
+      --color-charcoal:       #3d5467;
+      --color-coarse-wool:    #182027;
+      --color-smoke:          #f1edee;
+      --color-rule:           #d4d9d3;
+
+      --bg:      light-dark(var(--color-smoke), var(--color-coarse-wool));
+      --surface: light-dark(#fbf9f9, #1e2831);
+      --inset:   light-dark(#f4f0f1, #141c22);
+      --fg:      light-dark(var(--color-charcoal), var(--color-smoke));
+      --muted:   var(--color-dim-grey);
+      --rule:    light-dark(var(--color-rule), var(--color-charcoal));
+      --accent:  var(--color-lobster-deep);
+      --accent-hover: var(--color-lobster-deeper);
+      --ok:      light-dark(#4f736d, #8aa29e);
+      --err:     var(--color-lobster-deep);
+      --code-bg: rgba(192, 66, 79, 0.06);
+
+      --font-sans:  "Rethink Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      --font-mono:  "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+      --font-serif: "Lora", Georgia, serif;
+    }
     * { box-sizing: border-box; }
     body {
-      margin: 0; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #0f1115; color: #e7e9ee; padding: 24px;
+      margin: 0; font: 400 15px/1.6 var(--font-sans);
+      background: var(--bg); color: var(--fg); padding: 32px 24px;
+      -webkit-font-smoothing: antialiased;
     }
     .wrap { max-width: 560px; margin: 0 auto; }
-    h1 { font-size: 20px; }
+    h1 {
+      font-family: var(--font-serif); font-weight: 600;
+      font-size: 26px; letter-spacing: -0.01em; margin: 0 0 24px;
+    }
     .card {
-      background: #171a21; border: 1px solid #262b36; border-radius: 14px;
-      padding: 20px; margin-bottom: 18px;
+      background: var(--surface); border: 1px solid var(--rule); border-radius: 14px;
+      padding: 22px; margin-bottom: 18px;
     }
-    label { display: block; font-size: 13px; color: #99a0af; margin: 12px 0 6px; }
+    .card h3 {
+      margin: 0 0 4px; font-family: var(--font-mono); font-weight: 500;
+      font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase;
+      color: var(--accent);
+    }
+    label {
+      display: block; font-family: var(--font-mono); font-size: 12px;
+      letter-spacing: 0.03em; color: var(--muted); margin: 16px 0 6px;
+    }
     input[type=text], input[type=file], textarea {
-      width: 100%; padding: 10px 12px; border-radius: 9px;
-      background: #12151c; border: 1px solid #2a2f3a; color: #e7e9ee; font: inherit;
+      width: 100%; padding: 11px 12px; border-radius: 9px; font: inherit;
+      background: var(--inset); border: 1px solid var(--rule); color: var(--fg);
+      transition: border-color 0.15s ease;
     }
+    input[type=text]:focus, textarea:focus { border-color: var(--accent); }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     button {
-      margin-top: 14px; padding: 11px 16px; font-weight: 600; font-size: 15px;
-      border: 0; border-radius: 10px; background: #6366f1; color: #fff; cursor: pointer;
+      margin-top: 16px; padding: 11px 18px; font-weight: 600; font-size: 14px;
+      font-family: var(--font-sans);
+      border: 0; border-radius: 10px; background: var(--accent); color: var(--color-smoke);
+      cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
     }
-    button.secondary { background: #2a2f3a; }
+    button:hover { background: var(--accent-hover); }
+    button.secondary {
+      background: transparent; color: var(--fg);
+      border: 1px solid var(--rule);
+    }
+    button.secondary:hover { background: transparent; border-color: var(--accent); color: var(--accent); }
     .row { display: flex; align-items: center; gap: 14px; }
-    img.preview { width: 56px; height: 56px; border-radius: 12px; border: 1px solid #262b36; }
+    img.preview { width: 56px; height: 56px; border-radius: 12px; border: 1px solid var(--rule); }
     code, pre {
-      background: #12151c; border: 1px solid #262b36; border-radius: 8px;
-      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px;
+      font-family: var(--font-mono); font-size: 13px;
+      background: var(--code-bg); border: 1px solid var(--rule); border-radius: 6px;
     }
-    code { padding: 2px 6px; word-break: break-all; }
-    pre { padding: 12px; overflow-x: auto; }
-    .muted { color: #8b92a1; font-size: 13px; }
-    .count { font-size: 30px; font-weight: 700; }
+    code { padding: 2px 6px; word-break: break-all; color: var(--accent); }
+    pre { padding: 14px; overflow-x: auto; color: var(--fg); }
+    .muted { color: var(--muted); font-size: 13px; }
+    .count { font-family: var(--font-serif); font-size: 34px; font-weight: 600; line-height: 1; color: var(--fg); }
     .msg { margin-top: 12px; font-size: 14px; min-height: 20px; }
-    .msg.ok { color: #7ee2a8; } .msg.err { color: #f5a6b0; }
+    .msg.ok { color: var(--ok); } .msg.err { color: var(--err); }
+    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
 </head>
 <body>
@@ -58,7 +113,7 @@
     </div>
 
     <div class="card">
-      <h3 style="margin-top:0">Appearance</h3>
+      <h3>Appearance</h3>
       <label>App name</label>
       <input type="text" id="name" value="{{.AppName}}">
       <label>Icon (PNG, square — 512×512 recommended)</label>
@@ -68,7 +123,7 @@
     </div>
 
     <div class="card">
-      <h3 style="margin-top:0">Send a test</h3>
+      <h3>Send a test</h3>
       <label>Title</label>
       <input type="text" id="t-title" value="Hello">
       <label>Body</label>
@@ -78,12 +133,12 @@
     </div>
 
     <div class="card">
-      <h3 style="margin-top:0">Devices</h3>
+      <h3>Devices</h3>
       <div id="devices" class="muted">Loading…</div>
     </div>
 
     <div class="card">
-      <h3 style="margin-top:0">API</h3>
+      <h3>API</h3>
       <p class="muted">Send notifications from anywhere with this token:</p>
       <p><code id="token">{{.Token}}</code></p>
       <pre id="curl"></pre>

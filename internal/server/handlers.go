@@ -52,12 +52,24 @@ func (s *Server) serveStatic(name, contentType string) http.HandlerFunc {
 	}
 }
 
+const (
+	paperLight = "#f1edee"
+	paperDark  = "#182027"
+)
+
+func prefersDark(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Sec-CH-Prefers-Color-Scheme"), "dark")
+}
+
 func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	tmpl, err := template.ParseFS(webFS, "web/index.html")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	w.Header().Set("Accept-CH", "Sec-CH-Prefers-Color-Scheme")
+	w.Header().Set("Critical-CH", "Sec-CH-Prefers-Color-Scheme")
+	w.Header().Set("Vary", "Sec-CH-Prefers-Color-Scheme")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	tmpl.Execute(w, map[string]string{
 		"AppName":        s.appName(),
@@ -67,20 +79,27 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleManifest(w http.ResponseWriter, r *http.Request) {
 	name := s.appName()
+	paper := paperLight
+	if prefersDark(r) {
+		paper = paperDark
+	}
 	manifest := map[string]any{
 		"name":             name,
 		"short_name":       name,
 		"start_url":        "/",
 		"scope":            "/",
 		"display":          "standalone",
-		"background_color": "#0f1115",
-		"theme_color":      "#0f1115",
+		"background_color": paper,
+		"theme_color":      paper,
 		"icons": []map[string]string{
 			{"src": "/icon.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
 			{"src": "/icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
 			{"src": "/icon.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
 		},
 	}
+
+	w.Header().Set("Accept-CH", "Sec-CH-Prefers-Color-Scheme")
+	w.Header().Set("Vary", "Sec-CH-Prefers-Color-Scheme")
 	w.Header().Set("Content-Type", "application/manifest+json")
 	json.NewEncoder(w).Encode(manifest)
 }
