@@ -379,3 +379,26 @@ func TestTokenLockoutGuard(t *testing.T) {
 		t.Fatalf("downgrade last admin = %d, want 409", rec.Code)
 	}
 }
+
+func TestTokenUpdateDeleteMissingID(t *testing.T) {
+	s := newTestApp(t)
+	admin := "Bearer " + s.InitialToken()
+
+	// PATCH a nonexistent token returns 404.
+	req := httptest.NewRequest("PATCH", "/api/tokens/does-not-exist", strings.NewReader(`{"label":"x"}`))
+	req.Header.Set("Authorization", admin)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("patch missing = %d, want 404", rec.Code)
+	}
+
+	// DELETE a nonexistent token returns 404.
+	req = httptest.NewRequest("DELETE", "/api/tokens/does-not-exist", nil)
+	req.Header.Set("Authorization", admin)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("delete missing = %d, want 404", rec.Code)
+	}
+}

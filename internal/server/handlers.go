@@ -412,6 +412,16 @@ func (s *Server) handleUpdateToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
+	// Verify token exists.
+	rec, err := s.store.tokenByID(id)
+	if err != nil {
+		http.Error(w, "could not check token", http.StatusInternalServerError)
+		return
+	}
+	if rec == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
 	if body.Admin != nil && !*body.Admin && s.rootToken == "" {
 		stranded, err := s.wouldStrandAdmin(id)
 		if err != nil {
