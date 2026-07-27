@@ -5,13 +5,14 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 )
 
 func newTestApp(t *testing.T) *Server {
 	t.Helper()
-	s := &Server{store: newTestStore(t), subscriber: "mailto:test@localhost"}
+	s := &Server{store: newTestStore(t), subscriber: "mailto:test@localhost", limiter: newRateLimiter(5, 1), sessions: newSessionStore(time.Hour)}
 	if err := s.initSecrets(); err != nil {
 		t.Fatalf("initSecrets: %v", err)
 	}
@@ -24,9 +25,9 @@ func stubResp(code int) *http.Response {
 
 func TestBroadcastCountsAndPrunes(t *testing.T) {
 	s := newTestApp(t)
-	s.store.upsertSubscription(mkSub("https://push/ok"))
-	s.store.upsertSubscription(mkSub("https://push/gone"))
-	s.store.upsertSubscription(mkSub("https://push/err"))
+	s.store.upsertSubscription(mkSub("https://push/ok"), "")
+	s.store.upsertSubscription(mkSub("https://push/gone"), "")
+	s.store.upsertSubscription(mkSub("https://push/err"), "")
 
 	// Restore the real sender after the test.
 	orig := sendOne
@@ -54,5 +55,25 @@ func TestBroadcastCountsAndPrunes(t *testing.T) {
 	// The 410 endpoint should have been removed from the store.
 	if n, _ := s.store.countSubscriptions(); n != 2 {
 		t.Fatalf("count after prune = %d, want 2", n)
+	}
+}
+
+func TestBroadcastSetsUrgency(t *testing.T) {
+	s := newTestApp(t)
+	s.store.upsertSubscription(mkSub("https://push/a"), "")
+
+	orig := sendOne
+	t.Cleanup(func() { sendOne = orig })
+	var gotUrgency webpush.Urgency
+	sendOne = func(_ []byte, _ *webpush.Subscription, opts *webpush.Options) (*http.Response, error) {
+		gotUrgency = opts.Urgency
+		return stubResp(201), nil
+	}
+
+	if _, err := s.broadcast(pushPayload{Title: "hi", Urgency: "high"}); err != nil {
+		t.Fatalf("broadcast: %v", err)
+	}
+	if gotUrgency != webpush.UrgencyHigh {
+		t.Fatalf("urgency = %q, want high", gotUrgency)
 	}
 }

@@ -9,12 +9,22 @@ import (
 	webpush "github.com/SherClockHolmes/webpush-go"
 )
 
+// action is one notification button: a label and the URL to open on click.
+type action struct {
+	Title string `json:"title"`
+	URL   string `json:"url"`
+}
+
 // pushPayload is the JSON the service worker receives and turns into a
 // notification.
 type pushPayload struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
-	URL   string `json:"url,omitempty"`
+	Title   string   `json:"title"`
+	Body    string   `json:"body"`
+	URL     string   `json:"url,omitempty"`
+	Tag     string   `json:"tag,omitempty"`
+	Image   string   `json:"image,omitempty"`
+	Actions []action `json:"actions,omitempty"`
+	Urgency string   `json:"urgency,omitempty"`
 }
 
 // sendResult summarizes a broadcast.
@@ -48,6 +58,7 @@ func (s *Server) broadcast(p pushPayload) (sendResult, error) {
 		VAPIDPublicKey:  s.vapidPub,
 		VAPIDPrivateKey: s.vapidPriv,
 		TTL:             86400,
+		Urgency:         webpush.Urgency(p.Urgency),
 	}
 
 	var res sendResult

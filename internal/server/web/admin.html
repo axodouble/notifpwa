@@ -78,10 +78,18 @@
     </div>
 
     <div class="card">
+      <h3 style="margin-top:0">Devices</h3>
+      <div id="devices" class="muted">Loading…</div>
+    </div>
+
+    <div class="card">
       <h3 style="margin-top:0">API</h3>
       <p class="muted">Send notifications from anywhere with this token:</p>
       <p><code id="token">{{.Token}}</code></p>
       <pre id="curl"></pre>
+      <button class="secondary" id="rotate" style="margin-top:14px">Rotate token</button>
+      <div class="msg" id="rotate-msg"></div>
+      <button class="secondary" id="logout" style="margin-top:18px">Log out</button>
     </div>
   </div>
 

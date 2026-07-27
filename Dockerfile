@@ -28,4 +28,7 @@ ENV PORT=8080 DB_PATH=/data/data.db
 VOLUME /data
 EXPOSE 8080
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD ["notifpwa", "-healthcheck"]
+
 ENTRYPOINT ["notifpwa"]

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Handler builds the HTTP router for the application.
@@ -20,14 +21,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /manifest.webmanifest", s.handleManifest)
 	mux.HandleFunc("GET /icon.png", s.handleIcon)
 	mux.HandleFunc("GET /favicon.ico", s.handleIcon)
-	mux.HandleFunc("POST /api/subscribe", s.handleSubscribe)
+	mux.HandleFunc("POST /api/subscribe", s.rateLimit(s.handleSubscribe))
+	mux.HandleFunc("GET /healthz", s.handleHealthz)
 
 	// Token-protected surface. admin.js is static (it reads window.TOKEN,
 	// which the token-gated admin page injects), so it needs no gate itself.
 	mux.HandleFunc("GET /admin.js", s.serveStatic("web/admin.js", "text/javascript"))
 	mux.HandleFunc("GET /admin", s.handleAdmin)
+	mux.HandleFunc("POST /admin/logout", s.handleLogout)
 	mux.HandleFunc("POST /api/config", s.requireToken(s.handleConfig))
 	mux.HandleFunc("POST /api/send", s.requireToken(s.handleSend))
+	mux.HandleFunc("POST /api/rotate-token", s.requireToken(s.handleRotateToken))
+	mux.HandleFunc("GET /api/devices", s.requireToken(s.handleListDevices))
+	mux.HandleFunc("POST /api/devices/label", s.requireToken(s.handleLabelDevice))
+	mux.HandleFunc("DELETE /api/devices", s.requireToken(s.handleDeleteDevice))
 
 	return mux
 }
@@ -108,17 +115,41 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "incomplete subscription", http.StatusBadRequest)
 		return
 	}
-	if err := s.store.upsertSubscription(sub); err != nil {
+	if err := s.store.upsertSubscription(sub, r.UserAgent()); err != nil {
 		http.Error(w, "could not store subscription", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
+const adminCookie = "notifpwa_admin"
+
+// adminAuthed accepts either a valid session cookie or a valid ?token=.
+func (s *Server) adminAuthed(r *http.Request) bool {
+	if c, err := r.Cookie(adminCookie); err == nil && s.sessions.valid(c.Value, time.Now()) {
+		return true
+	}
+	return s.tokenOK(r.URL.Query().Get("token"))
+}
+
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
-	if !s.tokenOK(r.URL.Query().Get("token")) {
+	if !s.adminAuthed(r) {
 		http.Error(w, "invalid or missing ?token=", http.StatusUnauthorized)
 		return
+	}
+	// If authed by token (not a valid cookie), mint a fresh session so the
+	// token stops appearing in the URL on subsequent navigation. This also
+	// covers a stale/expired cookie presented alongside a valid ?token=.
+	if c, err := r.Cookie(adminCookie); err != nil || !s.sessions.valid(c.Value, time.Now()) {
+		id := s.sessions.create(time.Now())
+		http.SetCookie(w, &http.Cookie{
+			Name:     adminCookie,
+			Value:    id,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+		})
 	}
 	count, _ := s.store.countSubscriptions()
 	tmpl, err := template.ParseFS(webFS, "web/admin.html")
@@ -129,9 +160,20 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	tmpl.Execute(w, map[string]any{
 		"AppName": s.appName(),
-		"Token":   s.token,
+		"Token":   s.getToken(),
 		"Count":   count,
 	})
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if c, err := r.Cookie(adminCookie); err == nil {
+		s.sessions.delete(c.Value)
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: adminCookie, Value: "", Path: "/",
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: -1,
+	})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
@@ -175,6 +217,9 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "title or body required", http.StatusBadRequest)
 		return
 	}
+	if len(p.Actions) > 2 {
+		p.Actions = p.Actions[:2]
+	}
 	res, err := s.broadcast(p)
 	if err != nil {
 		http.Error(w, "send failed", http.StatusInternalServerError)
@@ -198,5 +243,69 @@ func (s *Server) requireToken(next http.HandlerFunc) http.HandlerFunc {
 
 // tokenOK compares in constant time to avoid leaking the token via timing.
 func (s *Server) tokenOK(candidate string) bool {
-	return subtle.ConstantTimeCompare([]byte(candidate), []byte(s.token)) == 1
+	return subtle.ConstantTimeCompare([]byte(candidate), []byte(s.getToken())) == 1
+}
+
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	if err := s.store.ping(); err != nil {
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Write([]byte("ok"))
+}
+
+func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
+	devs, err := s.store.listDevices()
+	if err != nil {
+		http.Error(w, "could not list devices", http.StatusInternalServerError)
+		return
+	}
+	if devs == nil {
+		devs = []device{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(devs)
+}
+
+func (s *Server) handleLabelDevice(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Endpoint string `json:"endpoint"`
+		Label    string `json:"label"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil || body.Endpoint == "" {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if err := s.store.setDeviceLabel(body.Endpoint, strings.TrimSpace(body.Label)); err != nil {
+		http.Error(w, "could not set label", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Endpoint string `json:"endpoint"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil || body.Endpoint == "" {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if err := s.store.deleteSubscription(body.Endpoint); err != nil {
+		http.Error(w, "could not delete device", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleRotateToken(w http.ResponseWriter, r *http.Request) {
+	token := randomHex(32)
+	if err := s.store.setSetting("api_token", []byte(token)); err != nil {
+		http.Error(w, "could not rotate token", http.StatusInternalServerError)
+		return
+	}
+	s.setToken(token)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
