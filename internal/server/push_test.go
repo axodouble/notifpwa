@@ -5,13 +5,14 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 )
 
 func newTestApp(t *testing.T) *Server {
 	t.Helper()
-	s := &Server{store: newTestStore(t), subscriber: "mailto:test@localhost", limiter: newRateLimiter(5, 1)}
+	s := &Server{store: newTestStore(t), subscriber: "mailto:test@localhost", limiter: newRateLimiter(5, 1), sessions: newSessionStore(time.Hour)}
 	if err := s.initSecrets(); err != nil {
 		t.Fatalf("initSecrets: %v", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Handler builds the HTTP router for the application.
@@ -27,6 +28,7 @@ func (s *Server) Handler() http.Handler {
 	// which the token-gated admin page injects), so it needs no gate itself.
 	mux.HandleFunc("GET /admin.js", s.serveStatic("web/admin.js", "text/javascript"))
 	mux.HandleFunc("GET /admin", s.handleAdmin)
+	mux.HandleFunc("POST /admin/logout", s.handleLogout)
 	mux.HandleFunc("POST /api/config", s.requireToken(s.handleConfig))
 	mux.HandleFunc("POST /api/send", s.requireToken(s.handleSend))
 
@@ -116,10 +118,33 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+const adminCookie = "notifpwa_admin"
+
+// adminAuthed accepts either a valid session cookie or a valid ?token=.
+func (s *Server) adminAuthed(r *http.Request) bool {
+	if c, err := r.Cookie(adminCookie); err == nil && s.sessions.valid(c.Value, time.Now()) {
+		return true
+	}
+	return s.tokenOK(r.URL.Query().Get("token"))
+}
+
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
-	if !s.tokenOK(r.URL.Query().Get("token")) {
+	if !s.adminAuthed(r) {
 		http.Error(w, "invalid or missing ?token=", http.StatusUnauthorized)
 		return
+	}
+	// If authed by token (not cookie), mint a session so the token stops
+	// appearing in the URL on subsequent navigation.
+	if _, err := r.Cookie(adminCookie); err != nil {
+		id := s.sessions.create(time.Now())
+		http.SetCookie(w, &http.Cookie{
+			Name:     adminCookie,
+			Value:    id,
+			Path:     "/",
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+		})
 	}
 	count, _ := s.store.countSubscriptions()
 	tmpl, err := template.ParseFS(webFS, "web/admin.html")
@@ -133,6 +158,17 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		"Token":   s.token,
 		"Count":   count,
 	})
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if c, err := r.Cookie(adminCookie); err == nil {
+		s.sessions.delete(c.Value)
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: adminCookie, Value: "", Path: "/",
+		HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: -1,
+	})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {

@@ -57,3 +57,9 @@ document.getElementById("send").addEventListener("click", async () => {
     msg(el, "Error: " + err.message, "err");
   }
 });
+
+// Log out: clear the session cookie and return to the token gate.
+document.getElementById("logout").addEventListener("click", async () => {
+  await fetch("/admin/logout", { method: "POST" });
+  location.href = "/admin";
+});

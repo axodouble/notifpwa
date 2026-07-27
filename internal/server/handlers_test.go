@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 )
@@ -121,6 +122,57 @@ func TestManifestReflectsAppName(t *testing.T) {
 	}
 	if m["name"] != "My Alerts" {
 		t.Fatalf("name = %v, want My Alerts", m["name"])
+	}
+}
+
+func TestAdminSetsAndAcceptsCookie(t *testing.T) {
+	s := newTestApp(t)
+
+	// Valid ?token= issues a session cookie.
+	req := httptest.NewRequest("GET", "/admin?token="+s.token, nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("token visit = %d, want 200", rec.Code)
+	}
+	cookies := rec.Result().Cookies()
+	var session *http.Cookie
+	for _, c := range cookies {
+		if c.Name == adminCookie {
+			session = c
+		}
+	}
+	if session == nil {
+		t.Fatal("no admin cookie set")
+	}
+
+	// The cookie alone (no ?token=) is accepted.
+	req = httptest.NewRequest("GET", "/admin", nil)
+	req.AddCookie(session)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cookie visit = %d, want 200", rec.Code)
+	}
+
+	// No token, no cookie -> 401.
+	req = httptest.NewRequest("GET", "/admin", nil)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous visit = %d, want 401", rec.Code)
+	}
+}
+
+func TestLogoutInvalidatesSession(t *testing.T) {
+	s := newTestApp(t)
+	id := s.sessions.create(time.Now())
+	req := httptest.NewRequest("POST", "/admin/logout", nil)
+	req.AddCookie(&http.Cookie{Name: adminCookie, Value: id})
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if s.sessions.valid(id, time.Now()) {
+		t.Fatal("session should be invalid after logout")
 	}
 }
 

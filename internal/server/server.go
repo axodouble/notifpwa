@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
+	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 )
@@ -28,6 +29,7 @@ type Server struct {
 	token      string
 	subscriber string
 	limiter    *rateLimiter
+	sessions   *sessionStore
 }
 
 // New opens (or creates) the database and loads/generates the VAPID keypair,
@@ -39,6 +41,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	s := &Server{store: st, subscriber: cfg.Subscriber, token: cfg.Token}
 	s.limiter = newRateLimiter(5, 1) // burst 5, refill 1/sec per IP
+	s.sessions = newSessionStore(7 * 24 * time.Hour)
 	if err := s.initSecrets(); err != nil {
 		st.close()
 		return nil, err
