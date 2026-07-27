@@ -11,23 +11,35 @@ self.addEventListener("push", (event) => {
     payload = { body: event.data ? event.data.text() : "" };
   }
 
+  const acts = Array.isArray(payload.actions) ? payload.actions.slice(0, 2) : [];
   const title = payload.title || "Notification";
   const options = {
     body: payload.body || "",
     icon: "/icon.png",
     badge: "/icon.png",
-    data: { url: payload.url || "/" },
+    tag: payload.tag || undefined,
+    image: payload.image || undefined,
+    actions: acts.map((a, i) => ({ action: String(i), title: a.title })),
+    data: {
+      url: payload.url || "/",
+      actionUrls: acts.map((a) => a.url),
+    },
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/";
+  const data = event.notification.data || {};
+  let url = data.url || "/";
+  if (event.action !== "" && Array.isArray(data.actionUrls)) {
+    const i = Number(event.action);
+    if (data.actionUrls[i]) url = data.actionUrls[i];
+  }
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
       for (const client of clients) {
-        if ("focus" in client) return client.focus();
+        if ("focus" in client && client.url === url) return client.focus();
       }
       return self.clients.openWindow(url);
     })

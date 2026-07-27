@@ -216,6 +216,9 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "title or body required", http.StatusBadRequest)
 		return
 	}
+	if len(p.Actions) > 2 {
+		p.Actions = p.Actions[:2]
+	}
 	res, err := s.broadcast(p)
 	if err != nil {
 		http.Error(w, "send failed", http.StatusInternalServerError)

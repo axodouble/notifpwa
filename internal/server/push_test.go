@@ -57,3 +57,23 @@ func TestBroadcastCountsAndPrunes(t *testing.T) {
 		t.Fatalf("count after prune = %d, want 2", n)
 	}
 }
+
+func TestBroadcastSetsUrgency(t *testing.T) {
+	s := newTestApp(t)
+	s.store.upsertSubscription(mkSub("https://push/a"), "")
+
+	orig := sendOne
+	t.Cleanup(func() { sendOne = orig })
+	var gotUrgency webpush.Urgency
+	sendOne = func(_ []byte, _ *webpush.Subscription, opts *webpush.Options) (*http.Response, error) {
+		gotUrgency = opts.Urgency
+		return stubResp(201), nil
+	}
+
+	if _, err := s.broadcast(pushPayload{Title: "hi", Urgency: "high"}); err != nil {
+		t.Fatalf("broadcast: %v", err)
+	}
+	if gotUrgency != webpush.UrgencyHigh {
+		t.Fatalf("urgency = %q, want high", gotUrgency)
+	}
+}

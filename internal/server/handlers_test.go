@@ -88,6 +88,32 @@ func TestSendWithValidTokenBroadcasts(t *testing.T) {
 	}
 }
 
+func TestSendCapsActionsToTwo(t *testing.T) {
+	s := newTestApp(t)
+	s.store.upsertSubscription(mkSub("https://push/a"), "")
+
+	orig := sendOne
+	t.Cleanup(func() { sendOne = orig })
+	var payload pushPayload
+	sendOne = func(msg []byte, _ *webpush.Subscription, _ *webpush.Options) (*http.Response, error) {
+		json.Unmarshal(msg, &payload)
+		return stubResp(201), nil
+	}
+
+	body := `{"title":"hi","actions":[{"title":"a","url":"/a"},{"title":"b","url":"/b"},{"title":"c","url":"/c"}]}`
+	req := httptest.NewRequest("POST", "/api/send", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+s.token)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("send = %d, want 200", rec.Code)
+	}
+	if len(payload.Actions) != 2 {
+		t.Fatalf("actions len = %d, want 2 (capped)", len(payload.Actions))
+	}
+}
+
 func TestDeviceEndpoints(t *testing.T) {
 	s := newTestApp(t)
 	s.store.upsertSubscription(mkSub("https://push/a"), "UA-A")
