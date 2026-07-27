@@ -21,8 +21,15 @@ type subscription struct {
 }
 
 func openStore(path string) (*store, error) {
-	db, err := sql.Open("sqlite", path)
+	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(on)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
+		return nil, err
+	}
+	// modernc/sqlite allows one writer; serialize to avoid "database is locked".
+	db.SetMaxOpenConns(1)
+	if err := db.Ping(); err != nil {
+		db.Close()
 		return nil, err
 	}
 	if _, err := db.Exec(`

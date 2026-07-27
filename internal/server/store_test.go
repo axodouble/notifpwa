@@ -44,6 +44,17 @@ func mkSub(endpoint string) subscription {
 	return s
 }
 
+func TestStoreUsesWAL(t *testing.T) {
+	st := newTestStore(t)
+	var mode string
+	if err := st.db.QueryRow(`PRAGMA journal_mode`).Scan(&mode); err != nil {
+		t.Fatalf("query journal_mode: %v", err)
+	}
+	if mode != "wal" {
+		t.Fatalf("journal_mode = %q, want wal", mode)
+	}
+}
+
 func TestSubscriptionUpsertAndDelete(t *testing.T) {
 	st := newTestStore(t)
 
