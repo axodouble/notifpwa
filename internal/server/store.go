@@ -133,6 +133,11 @@ func (s *store) setSetting(key string, value []byte) error {
 	return err
 }
 
+func (s *store) deleteSetting(key string) error {
+	_, err := s.db.Exec(`DELETE FROM settings WHERE key = ?`, key)
+	return err
+}
+
 // upsertSubscription stores a device, replacing any existing row for the same
 // endpoint so re-subscribing is idempotent. created_at is preserved on
 // conflict; user_agent and last_seen are refreshed.

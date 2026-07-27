@@ -35,8 +35,14 @@ func main() {
 	defer srv.Close()
 
 	log.Printf("notifpwa listening on :%s", port)
-	log.Printf("Open the admin page: http://localhost:%s/admin?token=%s", port, srv.Token())
-	log.Printf("API token (send with 'Authorization: Bearer <token>'): %s", srv.Token())
+	if tok := srv.InitialToken(); tok != "" {
+		log.Printf("Open the admin page: http://localhost:%s/admin?token=%s", port, tok)
+		log.Printf("API token (send with 'Authorization: Bearer <token>'): %s", tok)
+	} else {
+		log.Printf("Open the admin page: http://localhost:%s/admin and sign in", port)
+		log.Print("Admin tokens are already configured. Manage them in the admin panel, " +
+			"or set API_TOKEN for a guaranteed root token.")
+	}
 
 	httpSrv := &http.Server{Addr: ":" + port, Handler: srv.Handler()}
 

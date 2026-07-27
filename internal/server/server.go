@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
-	"sync"
 	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
@@ -24,14 +23,14 @@ type Config struct {
 
 // Server holds shared state for the running application.
 type Server struct {
-	store      *store
-	vapidPub   string
-	vapidPriv  string
-	token      string
-	tokenMu    sync.RWMutex
-	subscriber string
-	limiter    *rateLimiter
-	sessions   *sessionStore
+	store        *store
+	vapidPub     string
+	vapidPriv    string
+	rootToken    string
+	initialToken string
+	subscriber   string
+	limiter      *rateLimiter
+	sessions     *sessionStore
 }
 
 // New opens (or creates) the database and loads/generates the VAPID keypair,
@@ -41,7 +40,7 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{store: st, subscriber: cfg.Subscriber, token: cfg.Token}
+	s := &Server{store: st, subscriber: cfg.Subscriber, rootToken: cfg.Token}
 	s.limiter = newRateLimiter(5, 1) // burst 5, refill 1/sec per IP
 	s.sessions = newSessionStore(7 * 24 * time.Hour)
 	if err := s.initSecrets(); err != nil {
@@ -53,9 +52,6 @@ func New(cfg Config) (*Server, error) {
 
 // Close releases the database.
 func (s *Server) Close() error { return s.store.close() }
-
-// Token returns the API token clients must present to send notifications.
-func (s *Server) Token() string { return s.getToken() }
 
 // initSecrets loads the VAPID keypair, API token, and app name from the
 // database, generating them on first run.
@@ -82,18 +78,8 @@ func (s *Server) initSecrets() error {
 	}
 	s.vapidPriv, s.vapidPub = priv, pub
 
-	if s.getToken() == "" {
-		token, err := s.store.getSettingStr("api_token")
-		if err != nil {
-			return err
-		}
-		if token == "" {
-			token = randomHex(32)
-			if err := s.store.setSetting("api_token", []byte(token)); err != nil {
-				return err
-			}
-		}
-		s.setToken(token)
+	if err := s.initTokens(); err != nil {
+		return err
 	}
 
 	name, err := s.store.getSettingStr("app_name")
@@ -116,18 +102,48 @@ func (s *Server) appName() string {
 	return name
 }
 
-// getToken returns the current API token with read lock.
-func (s *Server) getToken() string {
-	s.tokenMu.RLock()
-	defer s.tokenMu.RUnlock()
-	return s.token
+// initTokens migrates a legacy single token into the tokens table (once) and
+// guarantees at least one admin token exists when there is no root token.
+func (s *Server) initTokens() error {
+	count, err := s.store.countTokens()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		legacy, err := s.store.getSettingStr("api_token")
+		if err != nil {
+			return err
+		}
+		if legacy != "" {
+			if _, err := s.store.addToken("Default", legacy, true, true); err != nil {
+				return err
+			}
+			s.initialToken = legacy // surface once so the operator keeps working access
+			count = 1
+		}
+		// The hash is now authoritative; drop the plaintext secret.
+		if err := s.store.deleteSetting("api_token"); err != nil {
+			return err
+		}
+	}
+	if count == 0 && s.rootToken == "" {
+		_, secret, err := s.store.createToken("Default", true, true)
+		if err != nil {
+			return err
+		}
+		s.initialToken = secret
+	}
+	return nil
 }
 
-// setToken updates the API token with write lock.
-func (s *Server) setToken(tok string) {
-	s.tokenMu.Lock()
-	defer s.tokenMu.Unlock()
-	s.token = tok
+// InitialToken returns a secret the operator can use to sign in: the root token
+// if configured, otherwise a secret generated or migrated on THIS run only.
+// Returns "" on later runs (secrets are hashed and unrecoverable).
+func (s *Server) InitialToken() string {
+	if s.rootToken != "" {
+		return s.rootToken
+	}
+	return s.initialToken
 }
 
 func randomHex(n int) string {

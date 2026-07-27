@@ -71,7 +71,7 @@ func TestSendWithValidTokenBroadcasts(t *testing.T) {
 	}
 
 	req := httptest.NewRequest("POST", "/api/send", strings.NewReader(`{"title":"hi","body":"yo"}`))
-	req.Header.Set("Authorization", "Bearer "+s.getToken())
+	req.Header.Set("Authorization", "Bearer "+s.InitialToken())
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
@@ -102,7 +102,7 @@ func TestSendCapsActionsToTwo(t *testing.T) {
 
 	body := `{"title":"hi","actions":[{"title":"a","url":"/a"},{"title":"b","url":"/b"},{"title":"c","url":"/c"}]}`
 	req := httptest.NewRequest("POST", "/api/send", strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+s.token)
+	req.Header.Set("Authorization", "Bearer "+s.InitialToken())
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 
@@ -117,7 +117,7 @@ func TestSendCapsActionsToTwo(t *testing.T) {
 func TestDeviceEndpoints(t *testing.T) {
 	s := newTestApp(t)
 	s.store.upsertSubscription(mkSub("https://push/a"), "UA-A")
-	bearer := "Bearer " + s.getToken()
+	bearer := "Bearer " + s.InitialToken()
 
 	// List requires auth.
 	req := httptest.NewRequest("GET", "/api/devices", nil)
@@ -204,7 +204,7 @@ func TestAdminSetsAndAcceptsCookie(t *testing.T) {
 	s := newTestApp(t)
 
 	// Valid ?token= issues a session cookie.
-	req := httptest.NewRequest("GET", "/admin?token="+s.getToken(), nil)
+	req := httptest.NewRequest("GET", "/admin?token="+s.InitialToken(), nil)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -244,7 +244,7 @@ func TestAdminReMintsExpiredCookie(t *testing.T) {
 
 	// A cookie value that was never issued by the session store is a clean
 	// "present but invalid" case.
-	req := httptest.NewRequest("GET", "/admin?token="+s.getToken(), nil)
+	req := httptest.NewRequest("GET", "/admin?token="+s.InitialToken(), nil)
 	req.AddCookie(&http.Cookie{Name: adminCookie, Value: "stale-never-issued"})
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -292,35 +292,5 @@ func TestHealthzOK(t *testing.T) {
 	}
 	if strings.TrimSpace(rec.Body.String()) != "ok" {
 		t.Fatalf("body = %q, want ok", rec.Body.String())
-	}
-}
-
-func TestRotateTokenChangesAcceptedToken(t *testing.T) {
-	s := newTestApp(t)
-	old := s.getToken()
-
-	req := httptest.NewRequest("POST", "/api/rotate-token", nil)
-	req.Header.Set("Authorization", "Bearer "+old)
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("rotate = %d, want 200", rec.Code)
-	}
-	var out struct{ Token string `json:"token"` }
-	json.Unmarshal(rec.Body.Bytes(), &out)
-	if out.Token == "" || out.Token == old {
-		t.Fatalf("token = %q, want a new non-empty value", out.Token)
-	}
-	if s.getToken() != out.Token {
-		t.Fatalf("in-memory token not updated")
-	}
-
-	// Old token is now rejected on a protected endpoint.
-	req = httptest.NewRequest("POST", "/api/send", strings.NewReader(`{"title":"x"}`))
-	req.Header.Set("Authorization", "Bearer "+old)
-	rec = httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("old token still accepted: %d, want 401", rec.Code)
 	}
 }

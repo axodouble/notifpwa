@@ -29,12 +29,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /admin.js", s.serveStatic("web/admin.js", "text/javascript"))
 	mux.HandleFunc("GET /admin", s.handleAdmin)
 	mux.HandleFunc("POST /admin/logout", s.handleLogout)
-	mux.HandleFunc("POST /api/config", s.requireToken(s.handleConfig))
-	mux.HandleFunc("POST /api/send", s.requireToken(s.handleSend))
-	mux.HandleFunc("POST /api/rotate-token", s.requireToken(s.handleRotateToken))
-	mux.HandleFunc("GET /api/devices", s.requireToken(s.handleListDevices))
-	mux.HandleFunc("POST /api/devices/label", s.requireToken(s.handleLabelDevice))
-	mux.HandleFunc("DELETE /api/devices", s.requireToken(s.handleDeleteDevice))
+	mux.HandleFunc("POST /api/config", s.requireAdmin(s.handleConfig))
+	mux.HandleFunc("POST /api/send", s.requireSend(s.handleSend))
+	mux.HandleFunc("GET /api/devices", s.requireAdmin(s.handleListDevices))
+	mux.HandleFunc("POST /api/devices/label", s.requireAdmin(s.handleLabelDevice))
+	mux.HandleFunc("DELETE /api/devices", s.requireAdmin(s.handleDeleteDevice))
 
 	return mux
 }
@@ -143,12 +142,60 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 
 const adminCookie = "notifpwa_admin"
 
-// adminAuthed accepts either a valid session cookie or a valid ?token=.
-func (s *Server) adminAuthed(r *http.Request) bool {
-	if c, err := r.Cookie(adminCookie); err == nil && s.sessions.valid(c.Value, time.Now()) {
-		return true
+func bearerToken(r *http.Request) string {
+	h := r.Header.Get("Authorization")
+	if !strings.HasPrefix(h, "Bearer ") {
+		return ""
 	}
-	return s.tokenOK(r.URL.Query().Get("token"))
+	return strings.TrimPrefix(h, "Bearer ")
+}
+
+// callerScopes resolves a request's capabilities: a valid admin session cookie
+// or the root token grant full access; otherwise a presented secret (Bearer or
+// ?token=) grants exactly its table scopes.
+func (s *Server) callerScopes(r *http.Request) (admin, send bool) {
+	if c, err := r.Cookie(adminCookie); err == nil && s.sessions.valid(c.Value, time.Now()) {
+		return true, true
+	}
+	secret := bearerToken(r)
+	if secret == "" {
+		secret = r.URL.Query().Get("token")
+	}
+	if secret == "" {
+		return false, false
+	}
+	if s.rootToken != "" && subtle.ConstantTimeCompare([]byte(secret), []byte(s.rootToken)) == 1 {
+		return true, true
+	}
+	if rec, err := s.store.lookupToken(secret); err == nil && rec != nil {
+		return rec.ScopeAdmin, rec.ScopeSend
+	}
+	return false, false
+}
+
+func (s *Server) adminAuthed(r *http.Request) bool {
+	admin, _ := s.callerScopes(r)
+	return admin
+}
+
+func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if admin, _ := s.callerScopes(r); !admin {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (s *Server) requireSend(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if _, send := s.callerScopes(r); !send {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
 }
 
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
@@ -179,7 +226,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	tmpl.Execute(w, map[string]any{
 		"AppName": s.appName(),
-		"Token":   s.getToken(),
+		"Token":   "",
 		"Count":   count,
 	})
 }
@@ -248,23 +295,6 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
-// requireToken wraps a handler, rejecting requests without a valid Bearer token.
-func (s *Server) requireToken(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !s.tokenOK(token) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		next(w, r)
-	}
-}
-
-// tokenOK compares in constant time to avoid leaking the token via timing.
-func (s *Server) tokenOK(candidate string) bool {
-	return subtle.ConstantTimeCompare([]byte(candidate), []byte(s.getToken())) == 1
-}
-
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.ping(); err != nil {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
@@ -316,15 +346,4 @@ func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func (s *Server) handleRotateToken(w http.ResponseWriter, r *http.Request) {
-	token := randomHex(32)
-	if err := s.store.setSetting("api_token", []byte(token)); err != nil {
-		http.Error(w, "could not rotate token", http.StatusInternalServerError)
-		return
-	}
-	s.setToken(token)
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
