@@ -34,6 +34,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/devices", s.requireAdmin(s.handleListDevices))
 	mux.HandleFunc("POST /api/devices/label", s.requireAdmin(s.handleLabelDevice))
 	mux.HandleFunc("DELETE /api/devices", s.requireAdmin(s.handleDeleteDevice))
+	mux.HandleFunc("GET /api/tokens", s.requireAdmin(s.handleListTokens))
+	mux.HandleFunc("POST /api/tokens", s.requireAdmin(s.handleCreateToken))
+	mux.HandleFunc("PATCH /api/tokens/{id}", s.requireAdmin(s.handleUpdateToken))
+	mux.HandleFunc("DELETE /api/tokens/{id}", s.requireAdmin(s.handleDeleteToken))
 
 	return mux
 }
@@ -346,4 +350,127 @@ func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func tokenJSON(t tokenRecord) map[string]any {
+	return map[string]any{
+		"id": t.ID, "label": t.Label, "prefix": t.Prefix,
+		"admin": t.ScopeAdmin, "send": t.ScopeSend,
+		"created_at": t.CreatedAt, "last_used_at": t.LastUsedAt,
+	}
+}
+
+func (s *Server) handleListTokens(w http.ResponseWriter, r *http.Request) {
+	toks, err := s.store.listTokens()
+	if err != nil {
+		http.Error(w, "could not list tokens", http.StatusInternalServerError)
+		return
+	}
+	out := make([]map[string]any, 0, len(toks))
+	for _, t := range toks {
+		out = append(out, tokenJSON(t))
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
+}
+
+func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Label string `json:"label"`
+		Admin bool   `json:"admin"`
+		Send  bool   `json:"send"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if !body.Admin && !body.Send {
+		http.Error(w, "token needs at least one scope", http.StatusBadRequest)
+		return
+	}
+	label := strings.TrimSpace(body.Label)
+	id, secret, err := s.store.createToken(label, body.Admin, body.Send)
+	if err != nil {
+		http.Error(w, "could not create token", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"id": id, "secret": secret, "prefix": secret[:6],
+		"label": label, "admin": body.Admin, "send": body.Send,
+	})
+}
+
+func (s *Server) handleUpdateToken(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body struct {
+		Label *string `json:"label"`
+		Admin *bool   `json:"admin"`
+		Send  *bool   `json:"send"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if body.Admin != nil && !*body.Admin && s.rootToken == "" {
+		stranded, err := s.wouldStrandAdmin(id)
+		if err != nil {
+			http.Error(w, "could not check tokens", http.StatusInternalServerError)
+			return
+		}
+		if stranded {
+			http.Error(w, "refusing to remove the last admin token; set API_TOKEN first", http.StatusConflict)
+			return
+		}
+	}
+	if err := s.store.updateToken(id, body.Label, body.Admin, body.Send); err != nil {
+		http.Error(w, "could not update token", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if s.rootToken == "" {
+		stranded, err := s.wouldStrandAdmin(id)
+		if err != nil {
+			http.Error(w, "could not check tokens", http.StatusInternalServerError)
+			return
+		}
+		if stranded {
+			http.Error(w, "refusing to delete the last admin token; set API_TOKEN first", http.StatusConflict)
+			return
+		}
+	}
+	ok, err := s.store.deleteToken(id)
+	if err != nil {
+		http.Error(w, "could not delete token", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// wouldStrandAdmin reports whether deleting or downgrading token id would leave
+// no admin-scoped tokens. Only meaningful when no root token is configured.
+func (s *Server) wouldStrandAdmin(id string) (bool, error) {
+	count, err := s.store.countAdminTokens()
+	if err != nil {
+		return false, err
+	}
+	if count > 1 {
+		return false, nil
+	}
+	rec, err := s.store.tokenByID(id)
+	if err != nil {
+		return false, err
+	}
+	if rec == nil {
+		return false, nil
+	}
+	return rec.ScopeAdmin && count == 1, nil
 }

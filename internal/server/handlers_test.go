@@ -294,3 +294,88 @@ func TestHealthzOK(t *testing.T) {
 		t.Fatalf("body = %q, want ok", rec.Body.String())
 	}
 }
+
+func TestTokenCRUDEndpoints(t *testing.T) {
+	s := newTestApp(t)
+	admin := "Bearer " + s.InitialToken() // bootstrap token is admin+send
+
+	// Create a send-only token.
+	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader(`{"label":"CI","admin":false,"send":true}`))
+	req.Header.Set("Authorization", admin)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create = %d, want 200", rec.Code)
+	}
+	var created struct {
+		ID, Secret  string
+		Admin, Send bool
+	}
+	json.Unmarshal(rec.Body.Bytes(), &created)
+	if created.ID == "" || len(created.Secret) != 64 || created.Admin || !created.Send {
+		t.Fatalf("created = %+v", created)
+	}
+
+	// The new secret can send but cannot reach an admin endpoint.
+	req = httptest.NewRequest("GET", "/api/devices", nil)
+	req.Header.Set("Authorization", "Bearer "+created.Secret)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("send-only on admin endpoint = %d, want 401", rec.Code)
+	}
+
+	// List shows two tokens (bootstrap admin + new sender), never a secret.
+	req = httptest.NewRequest("GET", "/api/tokens", nil)
+	req.Header.Set("Authorization", admin)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if strings.Contains(rec.Body.String(), created.Secret) {
+		t.Fatal("list leaked a secret")
+	}
+	var list []map[string]any
+	json.Unmarshal(rec.Body.Bytes(), &list)
+	if len(list) != 2 {
+		t.Fatalf("list len = %d, want 2", len(list))
+	}
+
+	// Delete the sender.
+	req = httptest.NewRequest("DELETE", "/api/tokens/"+created.ID, nil)
+	req.Header.Set("Authorization", admin)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete = %d, want 204", rec.Code)
+	}
+}
+
+func TestTokenLockoutGuard(t *testing.T) {
+	s := newTestApp(t) // no root token; bootstrap admin token is the only admin
+	admin := "Bearer " + s.InitialToken()
+
+	toks, _ := s.store.listTokens()
+	var adminID string
+	for _, tk := range toks {
+		if tk.ScopeAdmin {
+			adminID = tk.ID
+		}
+	}
+
+	// Deleting the last admin token is refused with 409.
+	req := httptest.NewRequest("DELETE", "/api/tokens/"+adminID, nil)
+	req.Header.Set("Authorization", admin)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("delete last admin = %d, want 409", rec.Code)
+	}
+
+	// Downgrading it (removing admin) is likewise refused.
+	req = httptest.NewRequest("PATCH", "/api/tokens/"+adminID, strings.NewReader(`{"admin":false}`))
+	req.Header.Set("Authorization", admin)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("downgrade last admin = %d, want 409", rec.Code)
+	}
+}
