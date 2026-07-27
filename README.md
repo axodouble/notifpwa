@@ -32,8 +32,8 @@ go build -o notifpwa ./cmd/notifpwa
 ./notifpwa
 ```
 
-On first run it creates `data.db`, generates a VAPID keypair and an API token,
-and prints the admin URL + token to the console:
+On first run it creates `data.db`, generates a VAPID keypair and an initial
+admin token, and prints the admin URL + token to the console:
 
 ```
 notifpwa listening on :8080
@@ -101,20 +101,27 @@ Any equivalent (nginx + certbot, Cloudflare Tunnel, etc.) works too.
 
 | Endpoint | Auth | Body | Description |
 |----------|------|------|-------------|
-| `POST /api/send` | `Bearer` | `{"title","body","url"?,"tag"?,"image"?,"actions"?,"urgency"?}` | Push to all devices. `actions` is up to 2 `{title,url}` buttons; `urgency` is `very-low`/`low`/`normal`/`high`. Returns `{"sent","failed","pruned"}`. |
-| `GET /api/devices` | `Bearer` | — | List subscribed devices with label, user-agent, and timestamps. |
-| `POST /api/devices/label` | `Bearer` | `{"endpoint","label"}` | Set a friendly label for a device. |
-| `DELETE /api/devices` | `Bearer` | `{"endpoint"}` | Remove one device. |
-| `POST /api/rotate-token` | `Bearer` | — | Generate a new API token; the old one stops working immediately. |
-| `POST /api/config` | `Bearer` | multipart (`name`, `icon`) | Update app name / icon. |
+| `POST /api/send` | `send` | `{"title","body","url"?,"tag"?,"image"?,"actions"?,"urgency"?}` | Push to all devices. `actions` is up to 2 `{title,url}` buttons; `urgency` is `very-low`/`low`/`normal`/`high`. Returns `{"sent","failed","pruned"}`. |
+| `GET /api/devices` | `admin` | — | List subscribed devices with label, user-agent, and timestamps. |
+| `POST /api/devices/label` | `admin` | `{"endpoint","label"}` | Set a friendly label for a device. |
+| `DELETE /api/devices` | `admin` | `{"endpoint"}` | Remove one device. |
+| `GET /api/tokens` | `admin` | — | List tokens (label, prefix, scopes, timestamps). Secrets are never returned. |
+| `POST /api/tokens` | `admin` | `{"label","admin","send"}` | Create a token; the response contains the full `secret` **once**. |
+| `PATCH /api/tokens/{id}` | `admin` | `{"label"?,"admin"?,"send"?}` | Rename or re-scope. Refuses (409) to drop the last admin token unless `API_TOKEN` is set. |
+| `DELETE /api/tokens/{id}` | `admin` | — | Revoke a token. Same last-admin guard as above. |
+| `POST /api/config` | `admin` | multipart (`name`, `icon`) | Update app name / icon. |
 | `POST /api/subscribe` | none | PushSubscription JSON | Register a device (called by the page). |
+
+**Auth column:** `send` = a token with the send scope (or an admin session);
+`admin` = a token with the admin scope (or a logged-in admin session).
+`Bearer` tokens go in `Authorization: Bearer <secret>`.
 
 ## Project structure
 
 ```
 cmd/notifpwa/        # entrypoint: reads env, starts the HTTP server
 internal/server/     # the application package
-  server.go          #   New(), config, VAPID/token/app-name bootstrap
+  server.go          #   New(), config, VAPID/token bootstrap
   store.go           #   SQLite: settings + subscriptions
   handlers.go        #   HTTP routes and handlers
   push.go            #   broadcast to all devices + prune dead endpoints
@@ -129,6 +136,7 @@ go test ./...
 
 ## Data & backup
 
-Everything (keys, token, icon, subscriptions) lives in `data.db`. Back up or move
-that single file to preserve your setup. Deleting it resets the app (new keys and
-token; devices must re-subscribe).
+Everything (keys, hashed tokens, icon, subscriptions) lives in `data.db`. Back up
+or move that single file to preserve your setup. Deleting it resets the app (new
+keys and tokens; devices must re-subscribe). Set `API_TOKEN` for a guaranteed
+always-valid root admin token.

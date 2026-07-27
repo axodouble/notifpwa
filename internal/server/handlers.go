@@ -24,17 +24,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/subscribe", s.rateLimit(s.handleSubscribe))
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 
-	// Token-protected surface. admin.js is static (it reads window.TOKEN,
-	// which the token-gated admin page injects), so it needs no gate itself.
+	// Token-protected surface. admin.js is static; its calls rely on the
+	// same-origin admin session cookie, so it needs no gate itself.
 	mux.HandleFunc("GET /admin.js", s.serveStatic("web/admin.js", "text/javascript"))
 	mux.HandleFunc("GET /admin", s.handleAdmin)
 	mux.HandleFunc("POST /admin/logout", s.handleLogout)
-	mux.HandleFunc("POST /api/config", s.requireToken(s.handleConfig))
-	mux.HandleFunc("POST /api/send", s.requireToken(s.handleSend))
-	mux.HandleFunc("POST /api/rotate-token", s.requireToken(s.handleRotateToken))
-	mux.HandleFunc("GET /api/devices", s.requireToken(s.handleListDevices))
-	mux.HandleFunc("POST /api/devices/label", s.requireToken(s.handleLabelDevice))
-	mux.HandleFunc("DELETE /api/devices", s.requireToken(s.handleDeleteDevice))
+	mux.HandleFunc("POST /api/config", s.requireAdmin(s.handleConfig))
+	mux.HandleFunc("POST /api/send", s.requireSend(s.handleSend))
+	mux.HandleFunc("GET /api/devices", s.requireAdmin(s.handleListDevices))
+	mux.HandleFunc("POST /api/devices/label", s.requireAdmin(s.handleLabelDevice))
+	mux.HandleFunc("DELETE /api/devices", s.requireAdmin(s.handleDeleteDevice))
+	mux.HandleFunc("GET /api/tokens", s.requireAdmin(s.handleListTokens))
+	mux.HandleFunc("POST /api/tokens", s.requireAdmin(s.handleCreateToken))
+	mux.HandleFunc("PATCH /api/tokens/{id}", s.requireAdmin(s.handleUpdateToken))
+	mux.HandleFunc("DELETE /api/tokens/{id}", s.requireAdmin(s.handleDeleteToken))
 
 	return mux
 }
@@ -143,17 +146,65 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 
 const adminCookie = "notifpwa_admin"
 
-// adminAuthed accepts either a valid session cookie or a valid ?token=.
-func (s *Server) adminAuthed(r *http.Request) bool {
-	if c, err := r.Cookie(adminCookie); err == nil && s.sessions.valid(c.Value, time.Now()) {
-		return true
+func bearerToken(r *http.Request) string {
+	h := r.Header.Get("Authorization")
+	if !strings.HasPrefix(h, "Bearer ") {
+		return ""
 	}
-	return s.tokenOK(r.URL.Query().Get("token"))
+	return strings.TrimPrefix(h, "Bearer ")
+}
+
+// callerScopes resolves a request's capabilities: a valid admin session cookie
+// or the root token grant full access; otherwise a presented secret (Bearer or
+// ?token=) grants exactly its table scopes.
+func (s *Server) callerScopes(r *http.Request) (admin, send bool) {
+	if c, err := r.Cookie(adminCookie); err == nil && s.sessions.valid(c.Value, time.Now()) {
+		return true, true
+	}
+	secret := bearerToken(r)
+	if secret == "" {
+		secret = r.URL.Query().Get("token")
+	}
+	if secret == "" {
+		return false, false
+	}
+	if s.rootToken != "" && subtle.ConstantTimeCompare([]byte(secret), []byte(s.rootToken)) == 1 {
+		return true, true
+	}
+	if rec, err := s.store.lookupToken(secret); err == nil && rec != nil {
+		return rec.ScopeAdmin, rec.ScopeSend
+	}
+	return false, false
+}
+
+func (s *Server) adminAuthed(r *http.Request) bool {
+	admin, _ := s.callerScopes(r)
+	return admin
+}
+
+func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if admin, _ := s.callerScopes(r); !admin {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (s *Server) requireSend(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if _, send := s.callerScopes(r); !send {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next(w, r)
+	}
 }
 
 func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	if !s.adminAuthed(r) {
-		http.Error(w, "invalid or missing ?token=", http.StatusUnauthorized)
+		http.Error(w, "unauthorized — sign in with an admin token", http.StatusUnauthorized)
 		return
 	}
 	// If authed by token (not a valid cookie), mint a fresh session so the
@@ -179,7 +230,6 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	tmpl.Execute(w, map[string]any{
 		"AppName": s.appName(),
-		"Token":   s.getToken(),
 		"Count":   count,
 	})
 }
@@ -248,23 +298,6 @@ func (s *Server) handleSend(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res)
 }
 
-// requireToken wraps a handler, rejecting requests without a valid Bearer token.
-func (s *Server) requireToken(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !s.tokenOK(token) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		next(w, r)
-	}
-}
-
-// tokenOK compares in constant time to avoid leaking the token via timing.
-func (s *Server) tokenOK(candidate string) bool {
-	return subtle.ConstantTimeCompare([]byte(candidate), []byte(s.getToken())) == 1
-}
-
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.ping(); err != nil {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
@@ -318,13 +351,135 @@ func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) handleRotateToken(w http.ResponseWriter, r *http.Request) {
-	token := randomHex(32)
-	if err := s.store.setSetting("api_token", []byte(token)); err != nil {
-		http.Error(w, "could not rotate token", http.StatusInternalServerError)
+func tokenJSON(t tokenRecord) map[string]any {
+	return map[string]any{
+		"id": t.ID, "label": t.Label, "prefix": t.Prefix,
+		"admin": t.ScopeAdmin, "send": t.ScopeSend,
+		"created_at": t.CreatedAt, "last_used_at": t.LastUsedAt,
+	}
+}
+
+func (s *Server) handleListTokens(w http.ResponseWriter, r *http.Request) {
+	toks, err := s.store.listTokens()
+	if err != nil {
+		http.Error(w, "could not list tokens", http.StatusInternalServerError)
 		return
 	}
-	s.setToken(token)
+	out := make([]map[string]any, 0, len(toks))
+	for _, t := range toks {
+		out = append(out, tokenJSON(t))
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"token": token})
+	json.NewEncoder(w).Encode(out)
+}
+
+func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Label string `json:"label"`
+		Admin bool   `json:"admin"`
+		Send  bool   `json:"send"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if !body.Admin && !body.Send {
+		http.Error(w, "token needs at least one scope", http.StatusBadRequest)
+		return
+	}
+	label := strings.TrimSpace(body.Label)
+	id, secret, err := s.store.createToken(label, body.Admin, body.Send)
+	if err != nil {
+		http.Error(w, "could not create token", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"id": id, "secret": secret, "prefix": secret[:6],
+		"label": label, "admin": body.Admin, "send": body.Send,
+	})
+}
+
+func (s *Server) handleUpdateToken(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	var body struct {
+		Label *string `json:"label"`
+		Admin *bool   `json:"admin"`
+		Send  *bool   `json:"send"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	// Verify token exists.
+	rec, err := s.store.tokenByID(id)
+	if err != nil {
+		http.Error(w, "could not check token", http.StatusInternalServerError)
+		return
+	}
+	if rec == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if body.Admin != nil && !*body.Admin && s.rootToken == "" {
+		stranded, err := s.wouldStrandAdmin(id)
+		if err != nil {
+			http.Error(w, "could not check tokens", http.StatusInternalServerError)
+			return
+		}
+		if stranded {
+			http.Error(w, "refusing to remove the last admin token; set API_TOKEN first", http.StatusConflict)
+			return
+		}
+	}
+	if err := s.store.updateToken(id, body.Label, body.Admin, body.Send); err != nil {
+		http.Error(w, "could not update token", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if s.rootToken == "" {
+		stranded, err := s.wouldStrandAdmin(id)
+		if err != nil {
+			http.Error(w, "could not check tokens", http.StatusInternalServerError)
+			return
+		}
+		if stranded {
+			http.Error(w, "refusing to delete the last admin token; set API_TOKEN first", http.StatusConflict)
+			return
+		}
+	}
+	ok, err := s.store.deleteToken(id)
+	if err != nil {
+		http.Error(w, "could not delete token", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// wouldStrandAdmin reports whether deleting or downgrading token id would leave
+// no admin-scoped tokens. Only meaningful when no root token is configured.
+func (s *Server) wouldStrandAdmin(id string) (bool, error) {
+	count, err := s.store.countAdminTokens()
+	if err != nil {
+		return false, err
+	}
+	if count > 1 {
+		return false, nil
+	}
+	rec, err := s.store.tokenByID(id)
+	if err != nil {
+		return false, err
+	}
+	if rec == nil {
+		return false, nil
+	}
+	return rec.ScopeAdmin && count == 1, nil
 }

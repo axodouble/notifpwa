@@ -200,3 +200,80 @@ func TestMigrationUpgradesLegacyDBIdempotently(t *testing.T) {
 		t.Fatalf("created_at after second open = %d, want %d", devs2[0].CreatedAt, seededCreatedAt)
 	}
 }
+
+func TestTokenCreateAndLookup(t *testing.T) {
+	st := newTestStore(t)
+
+	id, secret, err := st.createToken("CI", false, true)
+	if err != nil {
+		t.Fatalf("createToken: %v", err)
+	}
+	if id == "" || len(secret) != 64 {
+		t.Fatalf("id=%q secret len=%d, want non-empty id and 64-char secret", id, len(secret))
+	}
+
+	// The plaintext secret must never be stored.
+	var found int
+	st.db.QueryRow(`SELECT COUNT(*) FROM tokens WHERE token_hash = ?`, secret).Scan(&found)
+	if found != 0 {
+		t.Fatal("plaintext secret found in token_hash column")
+	}
+
+	rec, err := st.lookupToken(secret)
+	if err != nil || rec == nil {
+		t.Fatalf("lookupToken: rec=%v err=%v", rec, err)
+	}
+	if rec.ID != id || rec.ScopeAdmin || !rec.ScopeSend || rec.Prefix != secret[:6] {
+		t.Fatalf("rec = %+v, want send-only with prefix %q", rec, secret[:6])
+	}
+
+	if bad, _ := st.lookupToken("nope"); bad != nil {
+		t.Fatalf("lookupToken(wrong) = %+v, want nil", bad)
+	}
+	if empty, _ := st.lookupToken(""); empty != nil {
+		t.Fatalf("lookupToken(\"\") = %+v, want nil", empty)
+	}
+}
+
+func TestTokenManagement(t *testing.T) {
+	st := newTestStore(t)
+
+	if n, _ := st.countTokens(); n != 0 {
+		t.Fatalf("countTokens = %d, want 0", n)
+	}
+	a, _, _ := st.createToken("admin", true, false)
+	st.createToken("sender", false, true)
+
+	if n, _ := st.countTokens(); n != 2 {
+		t.Fatalf("countTokens = %d, want 2", n)
+	}
+	if n, _ := st.countAdminTokens(); n != 1 {
+		t.Fatalf("countAdminTokens = %d, want 1", n)
+	}
+
+	list, _ := st.listTokens()
+	if len(list) != 2 {
+		t.Fatalf("listTokens len = %d, want 2", len(list))
+	}
+
+	// Partial update: rename and grant send to the admin token.
+	newLabel, grant := "renamed", true
+	if err := st.updateToken(a, &newLabel, nil, &grant); err != nil {
+		t.Fatalf("updateToken: %v", err)
+	}
+	rec, _ := st.tokenByID(a)
+	if rec == nil || rec.Label != "renamed" || !rec.ScopeAdmin || !rec.ScopeSend {
+		t.Fatalf("after update rec = %+v", rec)
+	}
+
+	ok, _ := st.deleteToken(a)
+	if !ok {
+		t.Fatal("deleteToken returned false for existing id")
+	}
+	if gone, _ := st.tokenByID(a); gone != nil {
+		t.Fatalf("tokenByID after delete = %+v, want nil", gone)
+	}
+	if ok, _ := st.deleteToken("missing"); ok {
+		t.Fatal("deleteToken(missing) returned true")
+	}
+}

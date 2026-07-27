@@ -10,7 +10,6 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Lora:ital,wght@0,400..700;1,400..600&family=Rethink+Sans:wght@400..700&display=swap" rel="stylesheet">
-  <script>window.TOKEN = "{{.Token}}";</script>
   <style>
     :root {
       color-scheme: light dark;
@@ -96,6 +95,32 @@
     .msg { margin-top: 12px; font-size: 14px; min-height: 20px; }
     .msg.ok { color: var(--ok); } .msg.err { color: var(--err); }
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+    .token-list { margin: 4px 0 0; }
+    .token-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 12px 0; border-top: 1px solid var(--rule);
+    }
+    .token-row:first-child { border-top: 0; }
+    .token-meta { min-width: 0; }
+    .token-meta .name { font-weight: 600; }
+    .token-meta .sub { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+    .badge {
+      display: inline-block; font-family: var(--font-mono); font-size: 11px;
+      letter-spacing: 0.04em; padding: 2px 7px; border-radius: 999px;
+      border: 1px solid var(--rule); color: var(--muted); margin-right: 6px;
+    }
+    .badge.on { border-color: var(--accent); color: var(--accent); }
+    .checks { display: flex; gap: 18px; margin: 12px 0 4px; }
+    .checks label {
+      display: flex; align-items: center; gap: 8px; margin: 0;
+      font-family: var(--font-sans); font-size: 14px; color: var(--fg); letter-spacing: 0;
+      text-transform: none;
+    }
+    .secret-box {
+      margin-top: 14px; padding: 14px; border-radius: 9px;
+      background: var(--code-bg); border: 1px solid var(--accent);
+    }
+    .secret-box .warn { color: var(--accent); font-size: 13px; margin: 0 0 8px; }
   </style>
 </head>
 <body>
@@ -138,13 +163,30 @@
     </div>
 
     <div class="card">
-      <h3>API</h3>
-      <p class="muted">Send notifications from anywhere with this token:</p>
-      <p><code id="token">{{.Token}}</code></p>
-      <pre id="curl"></pre>
-      <button class="secondary" id="rotate" style="margin-top:14px">Rotate token</button>
-      <div class="msg" id="rotate-msg"></div>
-      <button class="secondary" id="logout" style="margin-top:18px">Log out</button>
+      <h3>Tokens</h3>
+      <p class="muted">Each token can access the admin panel, send notifications, or both.
+        Secrets are shown once at creation — copy them then.</p>
+      <div id="tokens" class="token-list muted">Loading…</div>
+
+      <h3 style="margin-top:22px">New token</h3>
+      <label>Label</label>
+      <input type="text" id="tk-label" placeholder="e.g. Zabbix">
+      <div class="checks">
+        <label><input type="checkbox" id="tk-admin"> Admin panel access</label>
+        <label><input type="checkbox" id="tk-send" checked> Send notifications</label>
+      </div>
+      <button id="tk-create">Create token</button>
+      <div class="msg" id="tk-msg"></div>
+      <div class="secret-box" id="tk-secret" hidden>
+        <p class="warn">Copy this now — it won't be shown again.</p>
+        <p><code id="tk-secret-val"></code></p>
+        <pre id="tk-curl"></pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>Session</h3>
+      <button class="secondary" id="logout">Log out</button>
     </div>
   </div>
 
