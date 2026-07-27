@@ -58,14 +58,14 @@ func TestStoreUsesWAL(t *testing.T) {
 func TestSubscriptionUpsertAndDelete(t *testing.T) {
 	st := newTestStore(t)
 
-	if err := st.upsertSubscription(mkSub("https://push/a")); err != nil {
+	if err := st.upsertSubscription(mkSub("https://push/a"), ""); err != nil {
 		t.Fatalf("upsert a: %v", err)
 	}
 	// Re-subscribing the same endpoint is idempotent (no duplicate row).
-	if err := st.upsertSubscription(mkSub("https://push/a")); err != nil {
+	if err := st.upsertSubscription(mkSub("https://push/a"), ""); err != nil {
 		t.Fatalf("upsert a again: %v", err)
 	}
-	st.upsertSubscription(mkSub("https://push/b"))
+	st.upsertSubscription(mkSub("https://push/b"), "")
 
 	if n, _ := st.countSubscriptions(); n != 2 {
 		t.Fatalf("count = %d, want 2", n)
@@ -84,5 +84,33 @@ func TestSubscriptionUpsertAndDelete(t *testing.T) {
 	}
 	if n, _ := st.countSubscriptions(); n != 1 {
 		t.Fatalf("count after delete = %d, want 1", n)
+	}
+}
+
+func TestDeviceMetadataAndLabel(t *testing.T) {
+	st := newTestStore(t)
+	if err := st.upsertSubscription(mkSub("https://push/a"), "Mozilla/5.0 Test"); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	devs, err := st.listDevices()
+	if err != nil {
+		t.Fatalf("listDevices: %v", err)
+	}
+	if len(devs) != 1 {
+		t.Fatalf("got %d devices, want 1", len(devs))
+	}
+	if devs[0].UserAgent != "Mozilla/5.0 Test" {
+		t.Fatalf("user_agent = %q", devs[0].UserAgent)
+	}
+	if devs[0].CreatedAt == 0 || devs[0].LastSeen == 0 {
+		t.Fatalf("timestamps not set: %+v", devs[0])
+	}
+
+	if err := st.setDeviceLabel("https://push/a", "Pixel 8"); err != nil {
+		t.Fatalf("setDeviceLabel: %v", err)
+	}
+	devs, _ = st.listDevices()
+	if devs[0].Label != "Pixel 8" {
+		t.Fatalf("label = %q, want Pixel 8", devs[0].Label)
 	}
 }

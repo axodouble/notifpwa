@@ -25,9 +25,9 @@ func stubResp(code int) *http.Response {
 
 func TestBroadcastCountsAndPrunes(t *testing.T) {
 	s := newTestApp(t)
-	s.store.upsertSubscription(mkSub("https://push/ok"))
-	s.store.upsertSubscription(mkSub("https://push/gone"))
-	s.store.upsertSubscription(mkSub("https://push/err"))
+	s.store.upsertSubscription(mkSub("https://push/ok"), "")
+	s.store.upsertSubscription(mkSub("https://push/gone"), "")
+	s.store.upsertSubscription(mkSub("https://push/err"), "")
 
 	// Restore the real sender after the test.
 	orig := sendOne

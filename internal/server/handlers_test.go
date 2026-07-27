@@ -60,7 +60,7 @@ func TestSendRequiresToken(t *testing.T) {
 
 func TestSendWithValidTokenBroadcasts(t *testing.T) {
 	s := newTestApp(t)
-	s.store.upsertSubscription(mkSub("https://push/a"))
+	s.store.upsertSubscription(mkSub("https://push/a"), "")
 
 	orig := sendOne
 	t.Cleanup(func() { sendOne = orig })
@@ -85,6 +85,55 @@ func TestSendWithValidTokenBroadcasts(t *testing.T) {
 	json.Unmarshal(rec.Body.Bytes(), &res)
 	if res.Sent != 1 {
 		t.Fatalf("sent = %d, want 1", res.Sent)
+	}
+}
+
+func TestDeviceEndpoints(t *testing.T) {
+	s := newTestApp(t)
+	s.store.upsertSubscription(mkSub("https://push/a"), "UA-A")
+	bearer := "Bearer " + s.getToken()
+
+	// List requires auth.
+	req := httptest.NewRequest("GET", "/api/devices", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauth list = %d, want 401", rec.Code)
+	}
+
+	// List returns the device.
+	req = httptest.NewRequest("GET", "/api/devices", nil)
+	req.Header.Set("Authorization", bearer)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list = %d, want 200", rec.Code)
+	}
+	var devs []device
+	json.Unmarshal(rec.Body.Bytes(), &devs)
+	if len(devs) != 1 || devs[0].UserAgent != "UA-A" {
+		t.Fatalf("list body = %+v", devs)
+	}
+
+	// Label it.
+	req = httptest.NewRequest("POST", "/api/devices/label", strings.NewReader(`{"endpoint":"https://push/a","label":"Phone"}`))
+	req.Header.Set("Authorization", bearer)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("label = %d, want 204", rec.Code)
+	}
+
+	// Delete it.
+	req = httptest.NewRequest("DELETE", "/api/devices", strings.NewReader(`{"endpoint":"https://push/a"}`))
+	req.Header.Set("Authorization", bearer)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete = %d, want 204", rec.Code)
+	}
+	if n, _ := s.store.countSubscriptions(); n != 0 {
+		t.Fatalf("count after delete = %d, want 0", n)
 	}
 }
 

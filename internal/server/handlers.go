@@ -32,6 +32,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/config", s.requireToken(s.handleConfig))
 	mux.HandleFunc("POST /api/send", s.requireToken(s.handleSend))
 	mux.HandleFunc("POST /api/rotate-token", s.requireToken(s.handleRotateToken))
+	mux.HandleFunc("GET /api/devices", s.requireToken(s.handleListDevices))
+	mux.HandleFunc("POST /api/devices/label", s.requireToken(s.handleLabelDevice))
+	mux.HandleFunc("DELETE /api/devices", s.requireToken(s.handleDeleteDevice))
 
 	return mux
 }
@@ -112,7 +115,7 @@ func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "incomplete subscription", http.StatusBadRequest)
 		return
 	}
-	if err := s.store.upsertSubscription(sub); err != nil {
+	if err := s.store.upsertSubscription(sub, r.UserAgent()); err != nil {
 		http.Error(w, "could not store subscription", http.StatusInternalServerError)
 		return
 	}
@@ -246,6 +249,50 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Write([]byte("ok"))
+}
+
+func (s *Server) handleListDevices(w http.ResponseWriter, r *http.Request) {
+	devs, err := s.store.listDevices()
+	if err != nil {
+		http.Error(w, "could not list devices", http.StatusInternalServerError)
+		return
+	}
+	if devs == nil {
+		devs = []device{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(devs)
+}
+
+func (s *Server) handleLabelDevice(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Endpoint string `json:"endpoint"`
+		Label    string `json:"label"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil || body.Endpoint == "" {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if err := s.store.setDeviceLabel(body.Endpoint, strings.TrimSpace(body.Label)); err != nil {
+		http.Error(w, "could not set label", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Endpoint string `json:"endpoint"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil || body.Endpoint == "" {
+		http.Error(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	if err := s.store.deleteSubscription(body.Endpoint); err != nil {
+		http.Error(w, "could not delete device", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleRotateToken(w http.ResponseWriter, r *http.Request) {

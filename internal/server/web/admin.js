@@ -86,3 +86,52 @@ document.getElementById("logout").addEventListener("click", async () => {
   await fetch("/admin/logout", { method: "POST" });
   location.href = "/admin";
 });
+
+// Render the device list with rename + remove controls.
+async function loadDevices() {
+  const box = document.getElementById("devices");
+  try {
+    const res = await fetch("/api/devices", { headers: authHeader() });
+    if (!res.ok) throw new Error(await res.text());
+    const devs = await res.json();
+    if (!devs.length) { box.textContent = "No devices subscribed yet."; return; }
+    box.innerHTML = "";
+    for (const d of devs) {
+      const row = document.createElement("div");
+      row.className = "row";
+      row.style.justifyContent = "space-between";
+      row.style.marginTop = "10px";
+      const name = d.label || d.user_agent || d.endpoint.slice(0, 40);
+      const label = document.createElement("span");
+      label.textContent = name;
+      const controls = document.createElement("span");
+      const rename = document.createElement("button");
+      rename.className = "secondary"; rename.textContent = "Rename"; rename.style.marginRight = "8px";
+      rename.addEventListener("click", async () => {
+        const next = prompt("Device label:", d.label || "");
+        if (next === null) return;
+        await fetch("/api/devices/label", {
+          method: "POST", headers: { ...authHeader(), "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: d.endpoint, label: next }),
+        });
+        loadDevices();
+      });
+      const remove = document.createElement("button");
+      remove.className = "secondary"; remove.textContent = "Remove";
+      remove.addEventListener("click", async () => {
+        if (!confirm("Remove this device?")) return;
+        await fetch("/api/devices", {
+          method: "DELETE", headers: { ...authHeader(), "Content-Type": "application/json" },
+          body: JSON.stringify({ endpoint: d.endpoint }),
+        });
+        loadDevices();
+      });
+      controls.append(rename, remove);
+      row.append(label, controls);
+      box.append(row);
+    }
+  } catch (err) {
+    box.textContent = "Could not load devices: " + err.message;
+  }
+}
+loadDevices();
