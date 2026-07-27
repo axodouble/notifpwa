@@ -234,3 +234,46 @@ func TestTokenCreateAndLookup(t *testing.T) {
 		t.Fatalf("lookupToken(\"\") = %+v, want nil", empty)
 	}
 }
+
+func TestTokenManagement(t *testing.T) {
+	st := newTestStore(t)
+
+	if n, _ := st.countTokens(); n != 0 {
+		t.Fatalf("countTokens = %d, want 0", n)
+	}
+	a, _, _ := st.createToken("admin", true, false)
+	st.createToken("sender", false, true)
+
+	if n, _ := st.countTokens(); n != 2 {
+		t.Fatalf("countTokens = %d, want 2", n)
+	}
+	if n, _ := st.countAdminTokens(); n != 1 {
+		t.Fatalf("countAdminTokens = %d, want 1", n)
+	}
+
+	list, _ := st.listTokens()
+	if len(list) != 2 {
+		t.Fatalf("listTokens len = %d, want 2", len(list))
+	}
+
+	// Partial update: rename and grant send to the admin token.
+	newLabel, grant := "renamed", true
+	if err := st.updateToken(a, &newLabel, nil, &grant); err != nil {
+		t.Fatalf("updateToken: %v", err)
+	}
+	rec, _ := st.tokenByID(a)
+	if rec == nil || rec.Label != "renamed" || !rec.ScopeAdmin || !rec.ScopeSend {
+		t.Fatalf("after update rec = %+v", rec)
+	}
+
+	ok, _ := st.deleteToken(a)
+	if !ok {
+		t.Fatal("deleteToken returned false for existing id")
+	}
+	if gone, _ := st.tokenByID(a); gone != nil {
+		t.Fatalf("tokenByID after delete = %+v, want nil", gone)
+	}
+	if ok, _ := st.deleteToken("missing"); ok {
+		t.Fatal("deleteToken(missing) returned true")
+	}
+}

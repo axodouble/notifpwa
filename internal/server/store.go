@@ -285,3 +285,82 @@ func (s *store) lookupToken(secret string) (*tokenRecord, error) {
 	s.db.Exec(`UPDATE tokens SET last_used_at = ? WHERE id = ?`, time.Now().Unix(), t.ID) // best-effort
 	return &t, nil
 }
+
+func (s *store) countTokens() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM tokens`).Scan(&n)
+	return n, err
+}
+
+func (s *store) countAdminTokens() (int, error) {
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM tokens WHERE scope_admin = 1`).Scan(&n)
+	return n, err
+}
+
+func (s *store) listTokens() ([]tokenRecord, error) {
+	rows, err := s.db.Query(`
+		SELECT id, label, prefix, scope_admin, scope_send, created_at, last_used_at
+		FROM tokens ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []tokenRecord
+	for rows.Next() {
+		var t tokenRecord
+		var admin, send int
+		if err := rows.Scan(&t.ID, &t.Label, &t.Prefix, &admin, &send, &t.CreatedAt, &t.LastUsedAt); err != nil {
+			return nil, err
+		}
+		t.ScopeAdmin, t.ScopeSend = admin == 1, send == 1
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+func (s *store) tokenByID(id string) (*tokenRecord, error) {
+	var t tokenRecord
+	var admin, send int
+	err := s.db.QueryRow(`
+		SELECT id, label, prefix, scope_admin, scope_send, created_at, last_used_at
+		FROM tokens WHERE id = ?`, id).
+		Scan(&t.ID, &t.Label, &t.Prefix, &admin, &send, &t.CreatedAt, &t.LastUsedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	t.ScopeAdmin, t.ScopeSend = admin == 1, send == 1
+	return &t, nil
+}
+
+// updateToken applies whichever of label/admin/send are non-nil.
+func (s *store) updateToken(id string, label *string, admin, send *bool) error {
+	if label != nil {
+		if _, err := s.db.Exec(`UPDATE tokens SET label = ? WHERE id = ?`, *label, id); err != nil {
+			return err
+		}
+	}
+	if admin != nil {
+		if _, err := s.db.Exec(`UPDATE tokens SET scope_admin = ? WHERE id = ?`, b2i(*admin), id); err != nil {
+			return err
+		}
+	}
+	if send != nil {
+		if _, err := s.db.Exec(`UPDATE tokens SET scope_send = ? WHERE id = ?`, b2i(*send), id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *store) deleteToken(id string) (bool, error) {
+	res, err := s.db.Exec(`DELETE FROM tokens WHERE id = ?`, id)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
