@@ -380,6 +380,23 @@ func TestTokenLockoutGuard(t *testing.T) {
 	}
 }
 
+func TestAdminPageHasTokensUIAndNoInjectedToken(t *testing.T) {
+	s := newTestApp(t)
+	req := httptest.NewRequest("GET", "/admin?token="+s.InitialToken(), nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "New token") {
+		t.Fatal("admin page missing the Tokens UI")
+	}
+	if strings.Contains(body, "window.TOKEN") {
+		t.Fatal("admin page still injects window.TOKEN")
+	}
+}
+
 func TestTokenUpdateDeleteMissingID(t *testing.T) {
 	s := newTestApp(t)
 	admin := "Bearer " + s.InitialToken()

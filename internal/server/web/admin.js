@@ -1,25 +1,10 @@
-// Admin page logic. All privileged calls carry the Bearer token that was
-// injected into the page (window.TOKEN).
-
-function authHeader() {
-  return { Authorization: "Bearer " + window.TOKEN };
-}
+// Admin page logic. The page is gated by the admin session cookie, which is
+// sent automatically on same-origin requests — no bearer token is injected.
 
 function msg(el, text, kind) {
   el.textContent = text;
   el.className = "msg" + (kind ? " " + kind : "");
 }
-
-function updateCurl() {
-  document.getElementById("curl").textContent =
-    `curl -X POST ${location.origin}/api/send \\\n` +
-    `  -H "Authorization: Bearer ${window.TOKEN}" \\\n` +
-    `  -H "Content-Type: application/json" \\\n` +
-    `  -d '{"title":"Hello","body":"It works","url":"/"}'`;
-}
-
-// Show a ready-to-copy curl command for the current origin.
-updateCurl();
 
 // Save appearance (name + optional icon).
 document.getElementById("save").addEventListener("click", async () => {
@@ -29,7 +14,7 @@ document.getElementById("save").addEventListener("click", async () => {
   const file = document.getElementById("icon").files[0];
   if (file) form.append("icon", file);
   try {
-    const res = await fetch("/api/config", { method: "POST", headers: authHeader(), body: form });
+    const res = await fetch("/api/config", { method: "POST", body: form });
     if (!res.ok) throw new Error(await res.text());
     msg(el, "Saved. Reloading…", "ok");
     setTimeout(() => location.reload(), 600);
@@ -45,7 +30,7 @@ document.getElementById("send").addEventListener("click", async () => {
   try {
     const res = await fetch("/api/send", {
       method: "POST",
-      headers: { ...authHeader(), "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: document.getElementById("t-title").value,
         body: document.getElementById("t-body").value,
@@ -64,34 +49,99 @@ document.getElementById("send").addEventListener("click", async () => {
   }
 });
 
-// Rotate the API token. Shows the new value once; existing clients must update.
-document.getElementById("rotate").addEventListener("click", async () => {
-  const el = document.getElementById("rotate-msg");
-  if (!confirm("Rotate the API token? Existing API clients will stop working until updated.")) return;
-  try {
-    const res = await fetch("/api/rotate-token", { method: "POST", headers: authHeader() });
-    if (!res.ok) throw new Error(await res.text());
-    const { token } = await res.json();
-    window.TOKEN = token;
-    document.getElementById("token").textContent = token;
-    updateCurl();
-    msg(el, "New token generated. Update your API clients.", "ok");
-  } catch (err) {
-    msg(el, "Error: " + err.message, "err");
-  }
-});
-
 // Log out: clear the session cookie and return to the token gate.
 document.getElementById("logout").addEventListener("click", async () => {
   await fetch("/admin/logout", { method: "POST" });
   location.href = "/admin";
 });
 
+// --- Tokens -------------------------------------------------------------
+
+function scopeBadges(t) {
+  const a = `<span class="badge${t.admin ? " on" : ""}">admin</span>`;
+  const s = `<span class="badge${t.send ? " on" : ""}">send</span>`;
+  return a + s;
+}
+
+async function patchToken(id, patch) {
+  const res = await fetch("/api/tokens/" + id, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(await res.text());
+}
+
+async function loadTokens() {
+  const box = document.getElementById("tokens");
+  try {
+    const res = await fetch("/api/tokens");
+    if (!res.ok) throw new Error(await res.text());
+    const toks = await res.json();
+    if (!toks.length) { box.textContent = "No tokens yet."; return; }
+    box.classList.remove("muted");
+    box.innerHTML = "";
+    for (const t of toks) {
+      const row = document.createElement("div");
+      row.className = "token-row";
+      const meta = document.createElement("div");
+      meta.className = "token-meta";
+      meta.innerHTML =
+        `<div class="name">${t.label || "(unnamed)"}</div>` +
+        `<div class="sub">${t.prefix}… · ${scopeBadges(t)}</div>`;
+      const controls = document.createElement("span");
+      const del = document.createElement("button");
+      del.className = "secondary";
+      del.textContent = "Delete";
+      del.addEventListener("click", async () => {
+        if (!confirm(`Delete token "${t.label || t.prefix}"?`)) return;
+        const res = await fetch("/api/tokens/" + t.id, { method: "DELETE" });
+        if (!res.ok) { alert(await res.text()); return; }
+        loadTokens();
+      });
+      controls.append(del);
+      row.append(meta, controls);
+      box.append(row);
+    }
+  } catch (err) {
+    box.textContent = "Could not load tokens: " + err.message;
+  }
+}
+
+document.getElementById("tk-create").addEventListener("click", async () => {
+  const el = document.getElementById("tk-msg");
+  const admin = document.getElementById("tk-admin").checked;
+  const send = document.getElementById("tk-send").checked;
+  if (!admin && !send) { msg(el, "Pick at least one scope.", "err"); return; }
+  try {
+    const res = await fetch("/api/tokens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: document.getElementById("tk-label").value, admin, send }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const t = await res.json();
+    msg(el, "Token created.", "ok");
+    document.getElementById("tk-label").value = "";
+    const box = document.getElementById("tk-secret");
+    box.hidden = false;
+    document.getElementById("tk-secret-val").textContent = t.secret;
+    document.getElementById("tk-curl").textContent =
+      `curl -X POST ${location.origin}/api/send \\\n` +
+      `  -H "Authorization: Bearer ${t.secret}" \\\n` +
+      `  -H "Content-Type: application/json" \\\n` +
+      `  -d '{"title":"Hello","body":"It works","url":"/"}'`;
+    loadTokens();
+  } catch (err) {
+    msg(el, "Error: " + err.message, "err");
+  }
+});
+
 // Render the device list with rename + remove controls.
 async function loadDevices() {
   const box = document.getElementById("devices");
   try {
-    const res = await fetch("/api/devices", { headers: authHeader() });
+    const res = await fetch("/api/devices");
     if (!res.ok) throw new Error(await res.text());
     const devs = await res.json();
     if (!devs.length) { box.textContent = "No devices subscribed yet."; return; }
@@ -111,7 +161,7 @@ async function loadDevices() {
         const next = prompt("Device label:", d.label || "");
         if (next === null) return;
         await fetch("/api/devices/label", {
-          method: "POST", headers: { ...authHeader(), "Content-Type": "application/json" },
+          method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ endpoint: d.endpoint, label: next }),
         });
         loadDevices();
@@ -121,7 +171,7 @@ async function loadDevices() {
       remove.addEventListener("click", async () => {
         if (!confirm("Remove this device?")) return;
         await fetch("/api/devices", {
-          method: "DELETE", headers: { ...authHeader(), "Content-Type": "application/json" },
+          method: "DELETE", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ endpoint: d.endpoint }),
         });
         loadDevices();
@@ -134,4 +184,6 @@ async function loadDevices() {
     box.textContent = "Could not load devices: " + err.message;
   }
 }
+
+loadTokens();
 loadDevices();

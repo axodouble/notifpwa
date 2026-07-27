@@ -24,8 +24,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/subscribe", s.rateLimit(s.handleSubscribe))
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 
-	// Token-protected surface. admin.js is static (it reads window.TOKEN,
-	// which the token-gated admin page injects), so it needs no gate itself.
+	// Token-protected surface. admin.js is static; its calls rely on the
+	// same-origin admin session cookie, so it needs no gate itself.
 	mux.HandleFunc("GET /admin.js", s.serveStatic("web/admin.js", "text/javascript"))
 	mux.HandleFunc("GET /admin", s.handleAdmin)
 	mux.HandleFunc("POST /admin/logout", s.handleLogout)
@@ -230,7 +230,6 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	tmpl.Execute(w, map[string]any{
 		"AppName": s.appName(),
-		"Token":   "",
 		"Count":   count,
 	})
 }
