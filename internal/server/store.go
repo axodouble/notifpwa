@@ -79,40 +79,12 @@ func (s *store) migrate() error {
 func (s *store) hasColumn(table, column string) (bool, error) {
 	rows, err := s.db.Query(`SELECT name FROM pragma_table_info(?)`, table)
 	if err != nil {
-		// Fall back for sqlite builds without the pragma table-valued function.
-		return s.hasColumnFallback(table, column)
+		return false, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			return false, err
-		}
-		if name == column {
-			return true, nil
-		}
-	}
-	return false, rows.Err()
-}
-
-// hasColumnFallback uses PRAGMA table_info via db.Query, scanning all
-// columns since PRAGMA statements can't be parameterized.
-func (s *store) hasColumnFallback(table, column string) (bool, error) {
-	rows, err := s.db.Query(`PRAGMA table_info(` + table + `)`)
-	if err != nil {
-		return false, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var (
-			cid        int
-			name       string
-			ctype      string
-			notnull    int
-			dfltValue  any
-			pk         int
-		)
-		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
 			return false, err
 		}
 		if name == column {
