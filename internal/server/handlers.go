@@ -236,7 +236,7 @@ func (s *Server) requireToken(next http.HandlerFunc) http.HandlerFunc {
 
 // tokenOK compares in constant time to avoid leaking the token via timing.
 func (s *Server) tokenOK(candidate string) bool {
-	return subtle.ConstantTimeCompare([]byte(candidate), []byte(s.token)) == 1
+	return subtle.ConstantTimeCompare([]byte(candidate), []byte(s.getToken())) == 1
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
@@ -254,7 +254,7 @@ func (s *Server) handleRotateToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "could not rotate token", http.StatusInternalServerError)
 		return
 	}
-	s.token = token
+	s.setToken(token)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"token": token})
 }

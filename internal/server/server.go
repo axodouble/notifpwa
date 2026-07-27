@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
+	"sync"
 	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
@@ -27,6 +28,7 @@ type Server struct {
 	vapidPub   string
 	vapidPriv  string
 	token      string
+	tokenMu    sync.RWMutex
 	subscriber string
 	limiter    *rateLimiter
 	sessions   *sessionStore
@@ -53,7 +55,7 @@ func New(cfg Config) (*Server, error) {
 func (s *Server) Close() error { return s.store.close() }
 
 // Token returns the API token clients must present to send notifications.
-func (s *Server) Token() string { return s.token }
+func (s *Server) Token() string { return s.getToken() }
 
 // initSecrets loads the VAPID keypair, API token, and app name from the
 // database, generating them on first run.
@@ -91,7 +93,7 @@ func (s *Server) initSecrets() error {
 				return err
 			}
 		}
-		s.token = token
+		s.setToken(token)
 	}
 
 	name, err := s.store.getSettingStr("app_name")
@@ -112,6 +114,20 @@ func (s *Server) appName() string {
 		return "Notify"
 	}
 	return name
+}
+
+// getToken returns the current API token with read lock.
+func (s *Server) getToken() string {
+	s.tokenMu.RLock()
+	defer s.tokenMu.RUnlock()
+	return s.token
+}
+
+// setToken updates the API token with write lock.
+func (s *Server) setToken(tok string) {
+	s.tokenMu.Lock()
+	defer s.tokenMu.Unlock()
+	s.token = tok
 }
 
 func randomHex(n int) string {
