@@ -58,6 +58,22 @@ document.getElementById("send").addEventListener("click", async () => {
   }
 });
 
+// Rotate the API token. Shows the new value once; existing clients must update.
+document.getElementById("rotate").addEventListener("click", async () => {
+  const el = document.getElementById("rotate-msg");
+  if (!confirm("Rotate the API token? Existing API clients will stop working until updated.")) return;
+  try {
+    const res = await fetch("/api/rotate-token", { method: "POST", headers: auth });
+    if (!res.ok) throw new Error(await res.text());
+    const { token } = await res.json();
+    window.TOKEN = token;
+    document.getElementById("token").textContent = token;
+    msg(el, "New token generated. Update your API clients.", "ok");
+  } catch (err) {
+    msg(el, "Error: " + err.message, "err");
+  }
+});
+
 // Log out: clear the session cookie and return to the token gate.
 document.getElementById("logout").addEventListener("click", async () => {
   await fetch("/admin/logout", { method: "POST" });

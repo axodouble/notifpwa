@@ -188,3 +188,33 @@ func TestHealthzOK(t *testing.T) {
 		t.Fatalf("body = %q, want ok", rec.Body.String())
 	}
 }
+
+func TestRotateTokenChangesAcceptedToken(t *testing.T) {
+	s := newTestApp(t)
+	old := s.token
+
+	req := httptest.NewRequest("POST", "/api/rotate-token", nil)
+	req.Header.Set("Authorization", "Bearer "+old)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("rotate = %d, want 200", rec.Code)
+	}
+	var out struct{ Token string `json:"token"` }
+	json.Unmarshal(rec.Body.Bytes(), &out)
+	if out.Token == "" || out.Token == old {
+		t.Fatalf("token = %q, want a new non-empty value", out.Token)
+	}
+	if s.token != out.Token {
+		t.Fatalf("in-memory token not updated")
+	}
+
+	// Old token is now rejected on a protected endpoint.
+	req = httptest.NewRequest("POST", "/api/send", strings.NewReader(`{"title":"x"}`))
+	req.Header.Set("Authorization", "Bearer "+old)
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("old token still accepted: %d, want 401", rec.Code)
+	}
+}

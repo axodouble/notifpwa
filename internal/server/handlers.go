@@ -31,6 +31,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /admin/logout", s.handleLogout)
 	mux.HandleFunc("POST /api/config", s.requireToken(s.handleConfig))
 	mux.HandleFunc("POST /api/send", s.requireToken(s.handleSend))
+	mux.HandleFunc("POST /api/rotate-token", s.requireToken(s.handleRotateToken))
 
 	return mux
 }
@@ -245,4 +246,15 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Write([]byte("ok"))
+}
+
+func (s *Server) handleRotateToken(w http.ResponseWriter, r *http.Request) {
+	token := randomHex(32)
+	if err := s.store.setSetting("api_token", []byte(token)); err != nil {
+		http.Error(w, "could not rotate token", http.StatusInternalServerError)
+		return
+	}
+	s.token = token
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
