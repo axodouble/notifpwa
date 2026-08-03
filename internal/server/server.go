@@ -30,6 +30,7 @@ type Server struct {
 	initialToken string
 	subscriber   string
 	limiter      *rateLimiter
+	postLimiter  *rateLimiter
 	sessions     *sessionStore
 }
 
@@ -41,7 +42,8 @@ func New(cfg Config) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{store: st, subscriber: cfg.Subscriber, rootToken: cfg.Token}
-	s.limiter = newRateLimiter(5, 1) // burst 5, refill 1/sec per IP
+	s.limiter = newRateLimiter(5, 1)      // burst 5, refill 1/sec per IP
+	s.postLimiter = newRateLimiter(20, 5) // burst 20, refill 5/sec per IP for public posts
 	s.sessions = newSessionStore(7 * 24 * time.Hour)
 	if err := s.initSecrets(); err != nil {
 		st.close()

@@ -22,6 +22,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /icon.png", s.handleIcon)
 	mux.HandleFunc("GET /favicon.ico", s.handleIcon)
 	mux.HandleFunc("POST /api/subscribe", s.rateLimit(s.handleSubscribe))
+	mux.HandleFunc("POST /n/{room}", s.rateLimitPost(s.handleRoomPost))
+	mux.HandleFunc("GET /api/rooms", s.rateLimitPost(s.handleListRooms))
+	mux.HandleFunc("POST /api/rooms", s.rateLimitPost(s.handleJoinRoom))
+	mux.HandleFunc("DELETE /api/rooms", s.rateLimitPost(s.handleLeaveRoom))
+	mux.HandleFunc("GET /api/rooms/log", s.rateLimitPost(s.handleDeviceRoomLog))
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 
 	// Token-protected surface. admin.js is static; its calls rely on the
@@ -38,6 +43,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/tokens", s.requireAdmin(s.handleCreateToken))
 	mux.HandleFunc("PATCH /api/tokens/{id}", s.requireAdmin(s.handleUpdateToken))
 	mux.HandleFunc("DELETE /api/tokens/{id}", s.requireAdmin(s.handleDeleteToken))
+	mux.HandleFunc("GET /api/admin/rooms", s.requireAdmin(s.handleAdminListRooms))
+	mux.HandleFunc("GET /api/admin/rooms/log", s.requireAdmin(s.handleAdminRoomLog))
 
 	return mux
 }

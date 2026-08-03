@@ -55,6 +55,31 @@ func openStore(path string) (*store, error) {
 			created_at   INTEGER NOT NULL,
 			last_used_at INTEGER NOT NULL DEFAULT 0
 		);
+		CREATE TABLE IF NOT EXISTS rooms (
+			name       TEXT PRIMARY KEY,
+			created_at INTEGER NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS room_subscriptions (
+			room        TEXT    NOT NULL,
+			endpoint    TEXT    NOT NULL,
+			secret_hash TEXT    NOT NULL DEFAULT '',
+			created_at  INTEGER NOT NULL,
+			PRIMARY KEY (room, endpoint),
+			FOREIGN KEY (endpoint) REFERENCES subscriptions(endpoint) ON DELETE CASCADE
+		);
+		CREATE TABLE IF NOT EXISTS notification_log (
+			id          INTEGER PRIMARY KEY AUTOINCREMENT,
+			room        TEXT    NOT NULL,
+			secret_hash TEXT    NOT NULL DEFAULT '',
+			title       TEXT    NOT NULL DEFAULT '',
+			body        TEXT    NOT NULL DEFAULT '',
+			url         TEXT    NOT NULL DEFAULT '',
+			sent        INTEGER NOT NULL DEFAULT 0,
+			failed      INTEGER NOT NULL DEFAULT 0,
+			created_at  INTEGER NOT NULL
+		);
+		CREATE INDEX IF NOT EXISTS idx_notification_log_room ON notification_log(room, id);
+		CREATE INDEX IF NOT EXISTS idx_room_subs_endpoint ON room_subscriptions(endpoint);
 	`); err != nil {
 		db.Close()
 		return nil, err

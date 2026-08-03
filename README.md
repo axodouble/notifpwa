@@ -25,6 +25,26 @@ Works on iOS 16.4+, Android, and desktop browsers.
 `GET /healthz` returns `200 ok` when the app and database are reachable. The
 Docker image runs this via a `HEALTHCHECK` so `docker ps` reports health.
 
+## Rooms (topics)
+
+Besides the global broadcast, devices can subscribe to named **rooms**. In the
+installed app, open the Rooms section, join a room by name, and optionally set a
+personal **secret**. Anyone can post to a room — no login — but a notification
+only reaches your device if the post's secret matches the one you set (a device
+with no secret receives only secret-less posts). Every post is logged per room.
+
+```sh
+# plaintext body (title defaults to the room name)
+curl -X POST "https://notify.example.com/n/alerts" \
+  -H "X-Room-Secret: my-secret" \
+  -d "Backup finished"
+
+# structured JSON
+curl -X POST "https://notify.example.com/n/alerts?secret=my-secret" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Alert","body":"CPU high","url":"/","urgency":"high"}'
+```
+
 ## Run it
 
 ```sh
@@ -111,6 +131,15 @@ Any equivalent (nginx + certbot, Cloudflare Tunnel, etc.) works too.
 | `DELETE /api/tokens/{id}` | `admin` | — | Revoke a token. Same last-admin guard as above. |
 | `POST /api/config` | `admin` | multipart (`name`, `icon`) | Update app name / icon. |
 | `POST /api/subscribe` | none | PushSubscription JSON | Register a device (called by the page). |
+| `POST /n/{room}` | secret* | plaintext, or `{"title","body",…}` (JSON) | Post to a room. Secret via `X-Room-Secret` header or `?secret=`. Delivered to room devices whose secret matches. Returns `{"sent","failed","pruned","recipients"}`. Rate-limited. |
+| `GET /api/rooms` | none | `?endpoint=` | List the rooms a device belongs to (`[{"room","has_secret"}]`). |
+| `POST /api/rooms` | none | `{"endpoint","room","secret"?}` | Join a room / set-or-clear its secret. `secret:""` clears; omit to leave unchanged. |
+| `DELETE /api/rooms` | none | `{"endpoint","room"}` | Leave a room. |
+| `GET /api/rooms/log` | none | `?endpoint=&room=` | Posts this device received in a room. |
+| `GET /api/admin/rooms` | `admin` | — | All rooms with subscriber counts. |
+| `GET /api/admin/rooms/log` | `admin` | `?room=` | Full post history for a room. |
+
+*the room "secret" is a per-subscriber delivery filter set by the device, not an account credential — posting itself needs no auth.
 
 **Auth column:** `send` = a token with the send scope (or an admin session);
 `admin` = a token with the admin scope (or a logged-in admin session).
@@ -125,6 +154,7 @@ internal/server/     # the application package
   store.go           #   SQLite: settings + subscriptions
   handlers.go        #   HTTP routes and handlers
   push.go            #   broadcast to all devices + prune dead endpoints
+  rooms.go           #   rooms: schema, membership, room broadcast + handlers
   web/               #   embedded PWA frontend (html/js/service worker/icon)
 ```
 

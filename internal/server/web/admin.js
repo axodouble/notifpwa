@@ -183,5 +183,52 @@ async function loadDevices() {
   }
 }
 
+// --- Rooms -----------------------------------------------------------------
+async function loadRooms() {
+  const el = document.getElementById("rooms");
+  try {
+    const res = await fetch("/api/admin/rooms");
+    if (!res.ok) throw new Error("failed");
+    const rooms = await res.json();
+    if (!rooms.length) { el.textContent = "No rooms yet."; return; }
+    el.textContent = "";
+    for (const r of rooms) {
+      const row = document.createElement("div");
+      row.className = "room-row";
+      const label = document.createElement("span");
+      label.textContent = r.room + " — " + r.subscribers + " device(s)";
+      const logBtn = document.createElement("button");
+      logBtn.className = "secondary";
+      logBtn.textContent = "History";
+      const logEl = document.createElement("div");
+      logEl.className = "muted";
+      logEl.hidden = true;
+      logBtn.addEventListener("click", async () => {
+        logEl.hidden = !logEl.hidden;
+        if (!logEl.hidden) await loadRoomHistory(r.room, logEl);
+      });
+      row.append(label, logBtn);
+      el.append(row, logEl);
+    }
+  } catch {
+    el.textContent = "Could not load rooms.";
+  }
+}
+
+async function loadRoomHistory(room, el) {
+  const res = await fetch("/api/admin/rooms/log?room=" + encodeURIComponent(room));
+  const posts = res.ok ? await res.json() : [];
+  el.textContent = "";
+  if (!posts.length) { el.textContent = "No notifications logged."; return; }
+  for (const p of posts) {
+    const row = document.createElement("div");
+    const when = new Date(p.created_at * 1000).toLocaleString();
+    row.textContent = when + " — " + (p.title || "") + (p.body ? ": " + p.body : "") +
+      "  [sent " + p.sent + ", failed " + p.failed + (p.had_secret ? ", secret" : "") + "]";
+    el.appendChild(row);
+  }
+}
+
 loadTokens();
 loadDevices();
+loadRooms();

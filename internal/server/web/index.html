@@ -102,6 +102,22 @@
       margin-bottom: 8px;
     }
     .ios b { color: var(--fg); font-weight: 600; }
+    .rooms { text-align: left; }
+    .room-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+    .room-item {
+      border: 1px solid var(--rule); border-radius: 9px; padding: 10px 12px;
+      background: var(--bg); font-size: 14px;
+    }
+    .room-item .room-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    .room-item .room-name { font-family: var(--font-mono); font-weight: 500; }
+    .room-item .room-actions { display: flex; gap: 6px; }
+    .room-item button { width: auto; padding: 6px 10px; font-size: 12px; }
+    .room-item button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--rule); }
+    .room-join { display: flex; gap: 8px; }
+    .room-join input { flex: 1; padding: 12px; border: 1px solid var(--rule); border-radius: 9px; background: var(--surface); color: var(--fg); font: inherit; }
+    .room-join button { width: auto; padding: 12px 16px; }
+    .room-log { margin-top: 8px; font-size: 13px; color: var(--muted); }
+    .room-log div { padding: 4px 0; border-top: 1px solid var(--rule); }
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
 </head>
@@ -118,6 +134,15 @@
       Tap the Share icon → <b>Add to Home Screen</b>, then open the app from your
       Home Screen and press Enable. Notifications only work from the installed
       app (iOS 16.4+).
+    </div>
+    <div id="rooms" class="rooms" hidden>
+      <p class="eyebrow" style="margin-top:26px">Rooms</p>
+      <div id="room-list" class="room-list"></div>
+      <div class="room-join">
+        <input type="text" id="room-name" placeholder="room name" autocapitalize="off" autocomplete="off" spellcheck="false">
+        <button id="room-add" type="button">Join room</button>
+      </div>
+      <div id="room-msg" class="status" hidden></div>
     </div>
   </div>
   <script src="/app.js"></script>

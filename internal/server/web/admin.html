@@ -121,6 +121,8 @@
       background: var(--code-bg); border: 1px solid var(--accent);
     }
     .secret-box .warn { color: var(--accent); font-size: 13px; margin: 0 0 8px; }
+    .room-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; }
+    .room-row button { width: auto; }
   </style>
 </head>
 <body>
@@ -160,6 +162,11 @@
     <div class="card">
       <h3>Devices</h3>
       <div id="devices" class="muted">Loading…</div>
+    </div>
+
+    <div class="card">
+      <h3>Rooms</h3>
+      <div id="rooms" class="muted">Loading…</div>
     </div>
 
     <div class="card">

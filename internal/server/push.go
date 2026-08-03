@@ -40,19 +40,22 @@ var sendOne = func(msg []byte, sub *webpush.Subscription, opts *webpush.Options)
 	return webpush.SendNotification(msg, sub, opts)
 }
 
-// broadcast sends the payload to every stored device. Endpoints that report
-// they are gone (404/410) are pruned from the database.
+// broadcast sends the payload to every stored device.
 func (s *Server) broadcast(p pushPayload) (sendResult, error) {
 	subs, err := s.store.listSubscriptions()
 	if err != nil {
 		return sendResult{}, err
 	}
+	return s.sendToSubs(subs, p)
+}
 
+// sendToSubs delivers p to the given subscriptions, pruning endpoints that
+// report they are gone (404/410) and counting sent/failed/pruned.
+func (s *Server) sendToSubs(subs []subscription, p pushPayload) (sendResult, error) {
 	msg, err := json.Marshal(p)
 	if err != nil {
 		return sendResult{}, err
 	}
-
 	opts := &webpush.Options{
 		Subscriber:      s.subscriber,
 		VAPIDPublicKey:  s.vapidPub,
@@ -60,7 +63,6 @@ func (s *Server) broadcast(p pushPayload) (sendResult, error) {
 		TTL:             86400,
 		Urgency:         webpush.Urgency(p.Urgency),
 	}
-
 	var res sendResult
 	for _, sub := range subs {
 		wp := &webpush.Subscription{
