@@ -2,8 +2,13 @@
 // https://github.com/vrepsaj/notifpwa
 //
 // Required Zabbix webhook media type parameters:
-//   notifpwa_url        e.g. https://notify.example.com
-//   notifpwa_token       API token printed on notifpwa first run / admin page
+//   notifpwa_url         e.g. https://notify.example.com
+//   notifpwa_room        the room to post to, e.g. "zabbix". Devices that
+//                        subscribed to this room (in the installed PWA) receive it.
+//   notifpwa_secret      (optional) the per-subscriber room secret; sent as the
+//                        X-Room-Secret header. Only devices in the room whose
+//                        secret matches receive the alert. Omit to reach devices
+//                        that set no secret. Posting needs no API token.
 //   zabbix_url
 //   event_source, event_value, event_update_status, event_nseverity, event_severity
 //   event_name, event_id, event_time, event_date, event_recovery_time, event_recovery_date
@@ -54,8 +59,8 @@ try {
             ? params.notifpwa_url.slice(0, -1) : params.notifpwa_url;
     }
 
-    if (!params.notifpwa_token) {
-        throw 'Cannot get notifpwa_token';
+    if (!params.notifpwa_room) {
+        throw 'Cannot get notifpwa_room';
     }
 
     params.zabbix_url = (params.zabbix_url.endsWith('/'))
@@ -163,9 +168,12 @@ try {
     }
 
     req.addHeader('Content-Type: application/json');
-    req.addHeader('Authorization: Bearer ' + params.notifpwa_token);
+    // Rooms need no API token; an optional per-subscriber secret filters delivery.
+    if (typeof params.notifpwa_secret === 'string' && params.notifpwa_secret !== '') {
+        req.addHeader('X-Room-Secret: ' + params.notifpwa_secret);
+    }
 
-    var resp = req.post(params.notifpwa_url + '/api/send', JSON.stringify(body)),
+    var resp = req.post(params.notifpwa_url + '/n/' + encodeURIComponent(params.notifpwa_room), JSON.stringify(body)),
         data = JSON.parse(resp);
 
     Zabbix.log(4, '[ notifpwa Webhook ] JSON: ' + JSON.stringify(body));
