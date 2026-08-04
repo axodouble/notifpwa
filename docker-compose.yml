@@ -15,7 +15,12 @@
 
 services:
   app:
-    build: .            # or: image: notifpwa
+    build:
+      context: .        # or: image: notifpwa
+      args:
+        # Stamp the build version. Set it when building, e.g.:
+        #   VERSION="$(git describe --tags --always --dirty)" docker compose build
+        VERSION: ${VERSION:-dev}
     restart: unless-stopped
     environment:
       # Used as the contact in the VAPID JWT sent to push services.

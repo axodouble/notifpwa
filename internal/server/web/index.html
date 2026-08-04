@@ -172,6 +172,10 @@
     }
     .room-msg.ok { border-color: var(--ok); color: var(--ok); }
     .room-msg.err { border-color: var(--err); color: var(--err); }
+    .version {
+      margin: 26px 0 0; font-family: var(--font-mono); font-size: 11px;
+      letter-spacing: 0.04em; color: var(--muted);
+    }
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
 </head>
@@ -199,6 +203,7 @@
       </form>
       <div id="room-msg" class="room-msg" hidden></div>
     </div>
+    <p class="version">{{.Version}}</p>
   </div>
   <script src="/app.js"></script>
 </body>

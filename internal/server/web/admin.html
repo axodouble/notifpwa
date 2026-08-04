@@ -91,6 +91,7 @@
     code { padding: 2px 6px; word-break: break-all; color: var(--accent); }
     pre { padding: 14px; overflow-x: auto; color: var(--fg); }
     .muted { color: var(--muted); font-size: 13px; }
+    .version { text-align: center; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; margin: 4px 0 0; }
     .count { font-family: var(--font-serif); font-size: 34px; font-weight: 600; line-height: 1; color: var(--fg); }
     .msg { margin-top: 12px; font-size: 14px; min-height: 20px; }
     .msg.ok { color: var(--ok); } .msg.err { color: var(--err); }
@@ -182,6 +183,8 @@
       <h3>Session</h3>
       <button class="secondary" id="logout">Log out</button>
     </div>
+
+    <p class="muted version">notifpwa {{.Version}}</p>
   </div>
 
   <script src="/admin.js"></script>

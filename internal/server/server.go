@@ -19,6 +19,7 @@ type Config struct {
 	DBPath     string // path to the SQLite file (created if missing)
 	Subscriber string // "mailto:" or URL used in the VAPID JWT
 	Token      string // optional root token granting full admin+send access; if empty, the server bootstraps an initial admin token surfaced via InitialToken()
+	Version    string // build version to display (e.g. a tag or commit); "dev" when empty
 }
 
 // Server holds shared state for the running application.
@@ -29,6 +30,7 @@ type Server struct {
 	rootToken    string
 	initialToken string
 	subscriber   string
+	version      string
 	limiter      *rateLimiter
 	postLimiter  *rateLimiter
 	sessions     *sessionStore
@@ -41,7 +43,11 @@ func New(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{store: st, subscriber: cfg.Subscriber, rootToken: cfg.Token}
+	version := cfg.Version
+	if version == "" {
+		version = "dev"
+	}
+	s := &Server{store: st, subscriber: cfg.Subscriber, rootToken: cfg.Token, version: version}
 	s.limiter = newRateLimiter(5, 1)      // burst 5, refill 1/sec per IP
 	s.postLimiter = newRateLimiter(20, 5) // burst 20, refill 5/sec per IP for public posts
 	s.sessions = newSessionStore(7 * 24 * time.Hour)
@@ -102,6 +108,14 @@ func (s *Server) appName() string {
 		return "Notify"
 	}
 	return name
+}
+
+// appVersion returns the build version to display, defaulting to "dev".
+func (s *Server) appVersion() string {
+	if s.version == "" {
+		return "dev"
+	}
+	return s.version
 }
 
 // initTokens migrates a legacy single token into the tokens table (once) and

@@ -83,6 +83,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	tmpl.Execute(w, map[string]string{
 		"AppName":        s.appName(),
 		"VapidPublicKey": s.vapidPub,
+		"Version":        s.appVersion(),
 	})
 }
 
@@ -224,6 +225,7 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	tmpl.Execute(w, map[string]any{
 		"AppName": s.appName(),
 		"Count":   count,
+		"Version": s.appVersion(),
 	})
 }
 

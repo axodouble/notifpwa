@@ -51,6 +51,15 @@ go build -o notifpwa ./cmd/notifpwa
 ./notifpwa
 ```
 
+The app shows its build version on the pages and at startup. A plain `go build`
+in a git checkout stamps the commit automatically; to show a release tag, pass
+it in:
+
+```sh
+go build -ldflags "-X main.version=$(git describe --tags --always --dirty)" \
+  -o notifpwa ./cmd/notifpwa
+```
+
 On first run it creates `data.db`, generates a VAPID keypair and an initial
 admin token, and prints the admin URL + token to the console:
 
@@ -74,7 +83,7 @@ devices are subscribed, and send a test notification.
 ## Run with Docker
 
 ```sh
-docker build -t notifpwa .
+docker build --build-arg VERSION="$(git describe --tags --always --dirty)" -t notifpwa .
 docker run -d --name notifpwa -p 8080:8080 -v notifpwa-data:/data notifpwa
 docker logs notifpwa   # prints the admin URL + API token
 ```

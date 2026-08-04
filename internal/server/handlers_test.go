@@ -350,3 +350,31 @@ func TestTokenUpdateDeleteMissingID(t *testing.T) {
 		t.Fatalf("delete missing = %d, want 404", rec.Code)
 	}
 }
+
+func TestVersionDisplayedOnPages(t *testing.T) {
+	s := newTestApp(t)
+	s.version = "v9.9.9-test"
+
+	// Public PWA page.
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), "v9.9.9-test") {
+		t.Fatalf("index page did not render the version")
+	}
+
+	// Admin page (authenticated).
+	req = httptest.NewRequest("GET", "/admin", nil)
+	req.Header.Set("Authorization", "Bearer "+s.InitialToken())
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if !strings.Contains(rec.Body.String(), "v9.9.9-test") {
+		t.Fatalf("admin page did not render the version")
+	}
+}
+
+func TestVersionDefaultsToDev(t *testing.T) {
+	if got := newTestApp(t).appVersion(); got != "dev" {
+		t.Fatalf("appVersion() = %q, want dev", got)
+	}
+}
