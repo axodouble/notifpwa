@@ -48,12 +48,17 @@
       margin: 0; min-height: 100vh;
       font: 400 16px/1.6 var(--font-sans);
       background: var(--bg); color: var(--fg);
-      display: flex; align-items: center; justify-content: center;
-      padding: 24px;
+      /* flex-start (not center): a card taller than the viewport must keep its
+         top reachable — centered flex items clip above the scroll origin.
+         .card margin:auto re-centers it vertically when it does fit. */
+      display: flex; align-items: flex-start; justify-content: center;
+      /* Respect the iOS status bar / notch (viewport-fit=cover extends under it). */
+      padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right))
+               max(24px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
       -webkit-font-smoothing: antialiased;
     }
     .card {
-      width: 100%; max-width: 420px; text-align: center;
+      width: 100%; max-width: 420px; text-align: center; margin: auto;
       background: var(--surface); border: 1px solid var(--rule); border-radius: 14px;
       padding: 40px 28px;
     }
@@ -124,6 +129,9 @@
       padding: 4px 14px 14px; border-top: 1px solid var(--rule);
       display: flex; flex-direction: column; gap: 12px;
     }
+    /* display:flex above would override the [hidden] attribute, so restate it:
+       a collapsed panel must stay hidden until its toggle expands it. */
+    .room-panel[hidden] { display: none; }
     .room-secret-state, .room-recent-label {
       margin: 10px 0 0; font-family: var(--font-mono); font-size: 11px; font-weight: 500;
       letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
