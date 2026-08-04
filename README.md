@@ -125,10 +125,10 @@ Any equivalent (nginx + certbot, Cloudflare Tunnel, etc.) works too.
 | `GET /api/devices` | `admin` | — | List subscribed devices with label, user-agent, and timestamps. |
 | `POST /api/devices/label` | `admin` | `{"endpoint","label"}` | Set a friendly label for a device. |
 | `DELETE /api/devices` | `admin` | `{"endpoint"}` | Remove one device. |
-| `GET /api/tokens` | `admin` | — | List tokens (label, prefix, scopes, timestamps). Secrets are never returned. |
-| `POST /api/tokens` | `admin` | `{"label","admin","send"}` | Create a token; the response contains the full `secret` **once**. |
-| `PATCH /api/tokens/{id}` | `admin` | `{"label"?,"admin"?,"send"?}` | Rename or re-scope. Refuses (409) to drop the last admin token unless `API_TOKEN` is set. |
-| `DELETE /api/tokens/{id}` | `admin` | — | Revoke a token. Same last-admin guard as above. |
+| `GET /api/tokens` | `admin` | — | List tokens (label, prefix, timestamps). Secrets are never returned. |
+| `POST /api/tokens` | `admin` | `{"label"}` | Create an admin token; the response contains the full `secret` **once**. |
+| `PATCH /api/tokens/{id}` | `admin` | `{"label"?}` | Rename a token. |
+| `DELETE /api/tokens/{id}` | `admin` | — | Revoke a token. Refuses (409) to delete the last token unless `API_TOKEN` is set. |
 | `POST /api/config` | `admin` | multipart (`name`, `icon`) | Update app name / icon. |
 | `POST /api/subscribe` | none | PushSubscription JSON | Register a device (called by the page). |
 | `POST /n/{room}` | secret* | plaintext, or `{"title","body",…}` (JSON) | Post to a room. Secret via `X-Room-Secret` header or `?secret=`. Delivered to room devices whose secret matches. Returns `{"sent","failed","pruned","recipients"}`. Rate-limited. |
@@ -141,9 +141,9 @@ Any equivalent (nginx + certbot, Cloudflare Tunnel, etc.) works too.
 
 *the room "secret" is a per-subscriber delivery filter set by the device, not an account credential — posting itself needs no auth.
 
-**Auth column:** `send` = a token with the send scope (or an admin session);
-`admin` = a token with the admin scope (or a logged-in admin session).
-`Bearer` tokens go in `Authorization: Bearer <secret>`.
+**Auth column:** `admin` = a token (or a logged-in admin session). `none` = no
+auth. `secret*` = the per-subscriber room secret. `Bearer` tokens go in
+`Authorization: Bearer <secret>`.
 
 ## Project structure
 
