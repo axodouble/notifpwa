@@ -102,22 +102,68 @@
       margin-bottom: 8px;
     }
     .ios b { color: var(--fg); font-weight: 600; }
-    .rooms { text-align: left; }
-    .room-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-    .room-item {
-      border: 1px solid var(--rule); border-radius: 9px; padding: 10px 12px;
-      background: var(--bg); font-size: 14px;
+    .rooms { text-align: left; margin-top: 26px; }
+    .rooms-eyebrow { margin: 0 0 12px; }
+    .room-list { display: flex; flex-direction: column; gap: 8px; }
+    .room { border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; background: var(--surface); }
+    .room-toggle {
+      width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 13px 14px; background: transparent; color: var(--fg); border: 0; border-radius: 0;
+      font: inherit; font-weight: 500; cursor: pointer; text-align: left;
     }
-    .room-item .room-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-    .room-item .room-name { font-family: var(--font-mono); font-weight: 500; }
-    .room-item .room-actions { display: flex; gap: 6px; }
-    .room-item button { width: auto; padding: 6px 10px; font-size: 12px; }
-    .room-item button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--rule); }
-    .room-join { display: flex; gap: 8px; }
-    .room-join input { flex: 1; padding: 12px; border: 1px solid var(--rule); border-radius: 9px; background: var(--surface); color: var(--fg); font: inherit; }
-    .room-join button { width: auto; padding: 12px 16px; }
-    .room-log { margin-top: 8px; font-size: 13px; color: var(--muted); }
-    .room-log div { padding: 4px 0; border-top: 1px solid var(--rule); }
+    .room-toggle:hover { background: var(--bg); }
+    .room-name { font-family: var(--font-mono); font-size: 14px; }
+    .room-flags { display: flex; align-items: center; gap: 8px; }
+    .room-lock { font-size: 12px; line-height: 1; }
+    .room-chevron {
+      width: 7px; height: 7px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+      transform: rotate(45deg); transition: transform 0.18s ease; flex: none;
+    }
+    .room-toggle[aria-expanded="true"] .room-chevron { transform: rotate(-135deg); }
+    .room-panel {
+      padding: 4px 14px 14px; border-top: 1px solid var(--rule);
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .room-secret-state, .room-recent-label {
+      margin: 10px 0 0; font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+      letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted);
+    }
+    .room-recent-label { margin-top: 2px; }
+    .room-secret-row { display: flex; gap: 8px; }
+    .room-secret-input {
+      flex: 1; min-width: 0; padding: 10px 12px; font: inherit; font-size: 14px; color: var(--fg);
+      background: var(--bg); border: 1px solid var(--rule); border-radius: 8px;
+    }
+    .room-btn {
+      width: auto; padding: 10px 14px; font-size: 13px; font-weight: 600; border: 0; border-radius: 8px;
+      background: var(--accent); color: var(--color-smoke); cursor: pointer;
+    }
+    .room-btn:hover { background: var(--accent-hover); }
+    .room-btn.ghost { background: transparent; color: var(--muted); border: 1px solid var(--rule); }
+    .room-btn.ghost:hover { color: var(--fg); background: var(--bg); }
+    .room-recent { font-size: 13px; color: var(--muted); }
+    .room-recent-item { display: flex; flex-direction: column; padding: 6px 0; border-top: 1px solid var(--rule); }
+    .room-recent-item:first-child { border-top: 0; }
+    .room-recent-when { font-family: var(--font-mono); font-size: 11px; color: var(--muted); }
+    .room-recent-text { color: var(--fg); }
+    .room-leave {
+      align-self: flex-start; width: auto; padding: 6px 0; font-size: 13px; font-weight: 500;
+      background: transparent; border: 0; color: var(--accent); cursor: pointer;
+    }
+    .room-leave:hover { text-decoration: underline; }
+    .room-empty { font-size: 14px; color: var(--muted); margin: 0; line-height: 1.5; }
+    .room-join { display: flex; gap: 8px; margin-top: 12px; }
+    .room-join input {
+      flex: 1; min-width: 0; padding: 12px; border: 1px solid var(--rule); border-radius: 9px;
+      background: var(--surface); color: var(--fg); font: inherit; font-size: 14px;
+    }
+    .room-join button { width: auto; padding: 12px 18px; }
+    .room-msg {
+      margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 13px;
+      background: var(--bg); border: 1px solid var(--rule); color: var(--fg);
+    }
+    .room-msg.ok { border-color: var(--ok); color: var(--ok); }
+    .room-msg.err { border-color: var(--err); color: var(--err); }
     @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
   </style>
 </head>
@@ -136,13 +182,14 @@
       app (iOS 16.4+).
     </div>
     <div id="rooms" class="rooms" hidden>
-      <p class="eyebrow" style="margin-top:26px">Rooms</p>
+      <p class="eyebrow rooms-eyebrow">Rooms</p>
       <div id="room-list" class="room-list"></div>
-      <div class="room-join">
-        <input type="text" id="room-name" placeholder="room name" autocapitalize="off" autocomplete="off" spellcheck="false">
-        <button id="room-add" type="button">Join room</button>
-      </div>
-      <div id="room-msg" class="status" hidden></div>
+      <form id="room-join" class="room-join">
+        <input type="text" id="room-name" placeholder="Join a room by name"
+               autocapitalize="off" autocomplete="off" spellcheck="false">
+        <button type="submit">Join</button>
+      </form>
+      <div id="room-msg" class="room-msg" hidden></div>
     </div>
   </div>
   <script src="/app.js"></script>

@@ -23,17 +23,19 @@ func stubResp(code int) *http.Response {
 	return &http.Response{StatusCode: code, Body: io.NopCloser(strings.NewReader(""))}
 }
 
-func TestBroadcastCountsAndPrunes(t *testing.T) {
+func TestBroadcastRoomCountsPrunesAndUrgency(t *testing.T) {
 	s := newTestApp(t)
-	s.store.upsertSubscription(mkSub("https://push/ok"), "")
-	s.store.upsertSubscription(mkSub("https://push/gone"), "")
-	s.store.upsertSubscription(mkSub("https://push/err"), "")
-
-	// Restore the real sender after the test.
+	for _, ep := range []string{"https://push/ok", "https://push/gone", "https://push/err"} {
+		s.store.upsertSubscription(mkSub(ep), "")
+		if err := s.store.joinRoom("r", ep, nil); err != nil { // no secret
+			t.Fatalf("joinRoom: %v", err)
+		}
+	}
 	orig := sendOne
 	t.Cleanup(func() { sendOne = orig })
-
-	sendOne = func(_ []byte, sub *webpush.Subscription, _ *webpush.Options) (*http.Response, error) {
+	var gotUrgency webpush.Urgency
+	sendOne = func(_ []byte, sub *webpush.Subscription, opts *webpush.Options) (*http.Response, error) {
+		gotUrgency = opts.Urgency
 		switch {
 		case strings.HasSuffix(sub.Endpoint, "/ok"):
 			return stubResp(201), nil
@@ -43,37 +45,17 @@ func TestBroadcastCountsAndPrunes(t *testing.T) {
 			return stubResp(500), nil
 		}
 	}
-
-	res, err := s.broadcast(pushPayload{Title: "hi", Body: "there"})
+	res, err := s.broadcastRoom("r", "", pushPayload{Title: "hi", Urgency: "high"})
 	if err != nil {
-		t.Fatalf("broadcast: %v", err)
+		t.Fatalf("broadcastRoom: %v", err)
 	}
-	if res.Sent != 1 || res.Pruned != 1 || res.Failed != 1 {
-		t.Fatalf("got %+v, want sent=1 pruned=1 failed=1", res)
+	if res.Sent != 1 || res.Pruned != 1 || res.Failed != 1 || res.Recipients != 3 {
+		t.Fatalf("got %+v, want sent=1 pruned=1 failed=1 recipients=3", res)
 	}
-
-	// The 410 endpoint should have been removed from the store.
+	if gotUrgency != webpush.Urgency("high") {
+		t.Fatalf("urgency = %q, want high", gotUrgency)
+	}
 	if n, _ := s.store.countSubscriptions(); n != 2 {
 		t.Fatalf("count after prune = %d, want 2", n)
-	}
-}
-
-func TestBroadcastSetsUrgency(t *testing.T) {
-	s := newTestApp(t)
-	s.store.upsertSubscription(mkSub("https://push/a"), "")
-
-	orig := sendOne
-	t.Cleanup(func() { sendOne = orig })
-	var gotUrgency webpush.Urgency
-	sendOne = func(_ []byte, _ *webpush.Subscription, opts *webpush.Options) (*http.Response, error) {
-		gotUrgency = opts.Urgency
-		return stubResp(201), nil
-	}
-
-	if _, err := s.broadcast(pushPayload{Title: "hi", Urgency: "high"}); err != nil {
-		t.Fatalf("broadcast: %v", err)
-	}
-	if gotUrgency != webpush.UrgencyHigh {
-		t.Fatalf("urgency = %q, want high", gotUrgency)
 	}
 }

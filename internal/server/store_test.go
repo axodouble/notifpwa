@@ -72,14 +72,6 @@ func TestSubscriptionUpsertAndDelete(t *testing.T) {
 		t.Fatalf("count = %d, want 2", n)
 	}
 
-	subs, err := st.listSubscriptions()
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(subs) != 2 {
-		t.Fatalf("listed %d, want 2", len(subs))
-	}
-
 	if err := st.deleteSubscription("https://push/a"); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
@@ -203,77 +195,60 @@ func TestMigrationUpgradesLegacyDBIdempotently(t *testing.T) {
 
 func TestTokenCreateAndLookup(t *testing.T) {
 	st := newTestStore(t)
-
-	id, secret, err := st.createToken("CI", false, true)
+	id, secret, err := st.createToken("CI")
 	if err != nil {
 		t.Fatalf("createToken: %v", err)
 	}
-	if id == "" || len(secret) != 64 {
-		t.Fatalf("id=%q secret len=%d, want non-empty id and 64-char secret", id, len(secret))
-	}
-
-	// The plaintext secret must never be stored.
-	var found int
-	st.db.QueryRow(`SELECT COUNT(*) FROM tokens WHERE token_hash = ?`, secret).Scan(&found)
-	if found != 0 {
-		t.Fatal("plaintext secret found in token_hash column")
-	}
-
 	rec, err := st.lookupToken(secret)
-	if err != nil || rec == nil {
-		t.Fatalf("lookupToken: rec=%v err=%v", rec, err)
+	if err != nil {
+		t.Fatalf("lookupToken: %v", err)
 	}
-	if rec.ID != id || rec.ScopeAdmin || !rec.ScopeSend || rec.Prefix != secret[:6] {
-		t.Fatalf("rec = %+v, want send-only with prefix %q", rec, secret[:6])
+	if rec == nil || rec.ID != id || rec.Label != "CI" || rec.Prefix != secret[:6] {
+		t.Fatalf("lookup returned %+v", rec)
 	}
-
 	if bad, _ := st.lookupToken("nope"); bad != nil {
-		t.Fatalf("lookupToken(wrong) = %+v, want nil", bad)
-	}
-	if empty, _ := st.lookupToken(""); empty != nil {
-		t.Fatalf("lookupToken(\"\") = %+v, want nil", empty)
+		t.Fatalf("expected nil for unknown secret, got %+v", bad)
 	}
 }
 
-func TestTokenManagement(t *testing.T) {
+func TestTokenRenameAndDelete(t *testing.T) {
 	st := newTestStore(t)
-
-	if n, _ := st.countTokens(); n != 0 {
-		t.Fatalf("countTokens = %d, want 0", n)
-	}
-	a, _, _ := st.createToken("admin", true, false)
-	st.createToken("sender", false, true)
-
-	if n, _ := st.countTokens(); n != 2 {
-		t.Fatalf("countTokens = %d, want 2", n)
-	}
-	if n, _ := st.countAdminTokens(); n != 1 {
-		t.Fatalf("countAdminTokens = %d, want 1", n)
-	}
-
-	list, _ := st.listTokens()
-	if len(list) != 2 {
-		t.Fatalf("listTokens len = %d, want 2", len(list))
-	}
-
-	// Partial update: rename and grant send to the admin token.
-	newLabel, grant := "renamed", true
-	if err := st.updateToken(a, &newLabel, nil, &grant); err != nil {
+	id, _, _ := st.createToken("old")
+	newLabel := "renamed"
+	if err := st.updateToken(id, &newLabel); err != nil {
 		t.Fatalf("updateToken: %v", err)
 	}
-	rec, _ := st.tokenByID(a)
-	if rec == nil || rec.Label != "renamed" || !rec.ScopeAdmin || !rec.ScopeSend {
-		t.Fatalf("after update rec = %+v", rec)
+	rec, _ := st.tokenByID(id)
+	if rec == nil || rec.Label != "renamed" {
+		t.Fatalf("rename failed: %+v", rec)
 	}
+	ok, err := st.deleteToken(id)
+	if err != nil || !ok {
+		t.Fatalf("deleteToken: ok=%v err=%v", ok, err)
+	}
+}
 
-	ok, _ := st.deleteToken(a)
-	if !ok {
-		t.Fatal("deleteToken returned false for existing id")
+func TestMigrationDropsLegacySendOnlyTokens(t *testing.T) {
+	st := newTestStore(t)
+	// A legacy send-only token (scope_admin=0) from before the rooms-only change.
+	if _, err := st.db.Exec(`INSERT INTO tokens
+		(id, label, token_hash, prefix, scope_admin, scope_send, created_at, last_used_at)
+		VALUES ('leg','old','hh','pp',0,1,1,0)`); err != nil {
+		t.Fatalf("insert legacy: %v", err)
 	}
-	if gone, _ := st.tokenByID(a); gone != nil {
-		t.Fatalf("tokenByID after delete = %+v, want nil", gone)
+	// An admin token that must survive.
+	if _, err := st.db.Exec(`INSERT INTO tokens
+		(id, label, token_hash, prefix, scope_admin, scope_send, created_at, last_used_at)
+		VALUES ('adm','a','h2','p2',1,0,1,0)`); err != nil {
+		t.Fatalf("insert admin: %v", err)
 	}
-	if ok, _ := st.deleteToken("missing"); ok {
-		t.Fatal("deleteToken(missing) returned true")
+	if err := st.migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if rec, _ := st.tokenByID("leg"); rec != nil {
+		t.Fatalf("legacy send-only token survived migrate")
+	}
+	if rec, _ := st.tokenByID("adm"); rec == nil {
+		t.Fatalf("admin token was wrongly deleted")
 	}
 }

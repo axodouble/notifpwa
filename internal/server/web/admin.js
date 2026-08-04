@@ -23,14 +23,19 @@ document.getElementById("save").addEventListener("click", async () => {
   }
 });
 
-// Send a test notification to all subscribed devices.
+// Send a test notification to a room.
 document.getElementById("send").addEventListener("click", async () => {
   const el = document.getElementById("send-msg");
+  const room = document.getElementById("t-room").value.trim();
+  if (!room) { msg(el, "Enter a room name.", "err"); return; }
   msg(el, "Sending…", null);
   try {
-    const res = await fetch("/api/send", {
+    const headers = { "Content-Type": "application/json" };
+    const secret = document.getElementById("t-secret").value;
+    if (secret) headers["X-Room-Secret"] = secret;
+    const res = await fetch("/n/" + encodeURIComponent(room), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
         title: document.getElementById("t-title").value,
         body: document.getElementById("t-body").value,
@@ -39,11 +44,7 @@ document.getElementById("send").addEventListener("click", async () => {
     });
     if (!res.ok) throw new Error(await res.text());
     const r = await res.json();
-    msg(el, `Sent ${r.sent}, failed ${r.failed}, pruned ${r.pruned}.`, "ok");
-    if (typeof r.pruned === "number") {
-      const c = document.getElementById("count");
-      c.textContent = Math.max(0, parseInt(c.textContent, 10) - r.pruned);
-    }
+    msg(el, `Sent to ${r.recipients} device(s) (sent ${r.sent}, failed ${r.failed}).`, "ok");
   } catch (err) {
     msg(el, "Error: " + err.message, "err");
   }
@@ -56,12 +57,6 @@ document.getElementById("logout").addEventListener("click", async () => {
 });
 
 // --- Tokens -------------------------------------------------------------
-
-function scopeBadges(t) {
-  const a = `<span class="badge${t.admin ? " on" : ""}">admin</span>`;
-  const s = `<span class="badge${t.send ? " on" : ""}">send</span>`;
-  return a + s;
-}
 
 async function loadTokens() {
   const box = document.getElementById("tokens");
@@ -82,10 +77,7 @@ async function loadTokens() {
       name.textContent = t.label || "(unnamed)";
       const sub = document.createElement("div");
       sub.className = "sub";
-      sub.append(document.createTextNode(t.prefix + "… · "));
-      const badges = document.createElement("span");
-      badges.innerHTML = scopeBadges(t);
-      sub.append(badges);
+      sub.textContent = t.prefix + "…";
       meta.append(name, sub);
       const controls = document.createElement("span");
       const del = document.createElement("button");
@@ -108,14 +100,11 @@ async function loadTokens() {
 
 document.getElementById("tk-create").addEventListener("click", async () => {
   const el = document.getElementById("tk-msg");
-  const admin = document.getElementById("tk-admin").checked;
-  const send = document.getElementById("tk-send").checked;
-  if (!admin && !send) { msg(el, "Pick at least one scope.", "err"); return; }
   try {
     const res = await fetch("/api/tokens", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label: document.getElementById("tk-label").value, admin, send }),
+      body: JSON.stringify({ label: document.getElementById("tk-label").value }),
     });
     if (!res.ok) throw new Error(await res.text());
     const t = await res.json();
@@ -125,10 +114,8 @@ document.getElementById("tk-create").addEventListener("click", async () => {
     box.hidden = false;
     document.getElementById("tk-secret-val").textContent = t.secret;
     document.getElementById("tk-curl").textContent =
-      `curl -X POST ${location.origin}/api/send \\\n` +
-      `  -H "Authorization: Bearer ${t.secret}" \\\n` +
-      `  -H "Content-Type: application/json" \\\n` +
-      `  -d '{"title":"Hello","body":"It works","url":"/"}'`;
+      `curl -H "Authorization: Bearer ${t.secret}" \\\n` +
+      `  ${location.origin}/api/admin/rooms`;
     loadTokens();
   } catch (err) {
     msg(el, "Error: " + err.message, "err");

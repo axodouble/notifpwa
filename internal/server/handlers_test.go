@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	webpush "github.com/SherClockHolmes/webpush-go"
 )
 
 func TestSubscribeStoresDevice(t *testing.T) {
@@ -34,83 +32,6 @@ func TestSubscribeRejectsIncomplete(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
-	}
-}
-
-func TestSendRequiresToken(t *testing.T) {
-	s := newTestApp(t)
-
-	// No token.
-	req := httptest.NewRequest("POST", "/api/send", strings.NewReader(`{"title":"hi"}`))
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("no token: status = %d, want 401", rec.Code)
-	}
-
-	// Wrong token.
-	req = httptest.NewRequest("POST", "/api/send", strings.NewReader(`{"title":"hi"}`))
-	req.Header.Set("Authorization", "Bearer wrong")
-	rec = httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("wrong token: status = %d, want 401", rec.Code)
-	}
-}
-
-func TestSendWithValidTokenBroadcasts(t *testing.T) {
-	s := newTestApp(t)
-	s.store.upsertSubscription(mkSub("https://push/a"), "")
-
-	orig := sendOne
-	t.Cleanup(func() { sendOne = orig })
-	called := 0
-	sendOne = func(_ []byte, _ *webpush.Subscription, _ *webpush.Options) (*http.Response, error) {
-		called++
-		return stubResp(201), nil
-	}
-
-	req := httptest.NewRequest("POST", "/api/send", strings.NewReader(`{"title":"hi","body":"yo"}`))
-	req.Header.Set("Authorization", "Bearer "+s.InitialToken())
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	if called != 1 {
-		t.Fatalf("sendOne called %d times, want 1", called)
-	}
-	var res sendResult
-	json.Unmarshal(rec.Body.Bytes(), &res)
-	if res.Sent != 1 {
-		t.Fatalf("sent = %d, want 1", res.Sent)
-	}
-}
-
-func TestSendCapsActionsToTwo(t *testing.T) {
-	s := newTestApp(t)
-	s.store.upsertSubscription(mkSub("https://push/a"), "")
-
-	orig := sendOne
-	t.Cleanup(func() { sendOne = orig })
-	var payload pushPayload
-	sendOne = func(msg []byte, _ *webpush.Subscription, _ *webpush.Options) (*http.Response, error) {
-		json.Unmarshal(msg, &payload)
-		return stubResp(201), nil
-	}
-
-	body := `{"title":"hi","actions":[{"title":"a","url":"/a"},{"title":"b","url":"/b"},{"title":"c","url":"/c"}]}`
-	req := httptest.NewRequest("POST", "/api/send", strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+s.InitialToken())
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("send = %d, want 200", rec.Code)
-	}
-	if len(payload.Actions) != 2 {
-		t.Fatalf("actions len = %d, want 2 (capped)", len(payload.Actions))
 	}
 }
 
@@ -297,10 +218,10 @@ func TestHealthzOK(t *testing.T) {
 
 func TestTokenCRUDEndpoints(t *testing.T) {
 	s := newTestApp(t)
-	admin := "Bearer " + s.InitialToken() // bootstrap token is admin+send
+	admin := "Bearer " + s.InitialToken()
 
-	// Create a send-only token.
-	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader(`{"label":"CI","admin":false,"send":true}`))
+	// Create a token.
+	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader(`{"label":"CI"}`))
 	req.Header.Set("Authorization", admin)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -308,24 +229,23 @@ func TestTokenCRUDEndpoints(t *testing.T) {
 		t.Fatalf("create = %d, want 200", rec.Code)
 	}
 	var created struct {
-		ID, Secret  string
-		Admin, Send bool
+		ID, Secret, Prefix, Label string
 	}
 	json.Unmarshal(rec.Body.Bytes(), &created)
-	if created.ID == "" || len(created.Secret) != 64 || created.Admin || !created.Send {
+	if created.ID == "" || len(created.Secret) != 64 || created.Prefix == "" || created.Label != "CI" {
 		t.Fatalf("created = %+v", created)
 	}
 
-	// The new secret can send but cannot reach an admin endpoint.
+	// The new secret is an admin credential and can reach an admin endpoint.
 	req = httptest.NewRequest("GET", "/api/devices", nil)
 	req.Header.Set("Authorization", "Bearer "+created.Secret)
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("send-only on admin endpoint = %d, want 401", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("new token on admin endpoint = %d, want 200", rec.Code)
 	}
 
-	// List shows two tokens (bootstrap admin + new sender), never a secret.
+	// List shows two tokens (bootstrap + new), never a secret.
 	req = httptest.NewRequest("GET", "/api/tokens", nil)
 	req.Header.Set("Authorization", admin)
 	rec = httptest.NewRecorder()
@@ -339,7 +259,7 @@ func TestTokenCRUDEndpoints(t *testing.T) {
 		t.Fatalf("list len = %d, want 2", len(list))
 	}
 
-	// Delete the sender.
+	// Delete the new token.
 	req = httptest.NewRequest("DELETE", "/api/tokens/"+created.ID, nil)
 	req.Header.Set("Authorization", admin)
 	rec = httptest.NewRecorder()
@@ -349,85 +269,45 @@ func TestTokenCRUDEndpoints(t *testing.T) {
 	}
 }
 
-func TestTokenLockoutGuard(t *testing.T) {
-	s := newTestApp(t) // no root token; bootstrap admin token is the only admin
-	admin := "Bearer " + s.InitialToken()
+func TestTokenDeleteGuardsLastToken(t *testing.T) {
+	s := newTestApp(t) // no root token; the bootstrap token is the only one
+	bearer := "Bearer " + s.InitialToken()
 
-	toks, _ := s.store.listTokens()
-	var adminID string
-	for _, tk := range toks {
-		if tk.ScopeAdmin {
-			adminID = tk.ID
-		}
-	}
-
-	// Deleting the last admin token is refused with 409.
-	req := httptest.NewRequest("DELETE", "/api/tokens/"+adminID, nil)
-	req.Header.Set("Authorization", admin)
+	// Find the sole token's id.
+	req := httptest.NewRequest("GET", "/api/tokens", nil)
+	req.Header.Set("Authorization", bearer)
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("delete last admin = %d, want 409", rec.Code)
+	var toks []map[string]any
+	json.Unmarshal(rec.Body.Bytes(), &toks)
+	if len(toks) != 1 {
+		t.Fatalf("want 1 token, got %d", len(toks))
 	}
+	lastID := toks[0]["id"].(string)
 
-	// Downgrading it (removing admin) is likewise refused.
-	req = httptest.NewRequest("PATCH", "/api/tokens/"+adminID, strings.NewReader(`{"admin":false}`))
-	req.Header.Set("Authorization", admin)
+	// Deleting the last token is refused (409).
+	req = httptest.NewRequest("DELETE", "/api/tokens/"+lastID, nil)
+	req.Header.Set("Authorization", bearer)
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusConflict {
-		t.Fatalf("downgrade last admin = %d, want 409", rec.Code)
+		t.Fatalf("delete last token: status = %d, want 409", rec.Code)
 	}
-}
 
-func TestTokenGuardAllowsWhenAnotherAdminExists(t *testing.T) {
-	s := newTestApp(t) // no root token; bootstrap "Default" admin+send token exists
-	admin := "Bearer " + s.InitialToken()
-
-	// Create a second admin token.
-	req := httptest.NewRequest("POST", "/api/tokens", strings.NewReader(`{"label":"admin2","admin":true,"send":false}`))
-	req.Header.Set("Authorization", admin)
-	rec := httptest.NewRecorder()
+	// Create a second token, then deleting the first is allowed.
+	req = httptest.NewRequest("POST", "/api/tokens", strings.NewReader(`{"label":"second"}`))
+	req.Header.Set("Authorization", bearer)
+	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("create second admin = %d, want 200", rec.Code)
+		t.Fatalf("create second token: status = %d", rec.Code)
 	}
-	var created struct{ ID, Secret string }
-	json.Unmarshal(rec.Body.Bytes(), &created)
-	admin2 := "Bearer " + created.Secret
-
-	// Find the bootstrap admin token's id.
-	toks, err := s.store.listTokens()
-	if err != nil {
-		t.Fatalf("listTokens: %v", err)
-	}
-	var bootstrapAdminID string
-	for _, tk := range toks {
-		if tk.ID != created.ID && tk.ScopeAdmin {
-			bootstrapAdminID = tk.ID
-		}
-	}
-	if bootstrapAdminID == "" {
-		t.Fatal("could not find bootstrap admin token")
-	}
-
-	// Deleting the bootstrap admin is now allowed, since admin2 still exists.
-	req = httptest.NewRequest("DELETE", "/api/tokens/"+bootstrapAdminID, nil)
-	req.Header.Set("Authorization", admin)
+	req = httptest.NewRequest("DELETE", "/api/tokens/"+lastID, nil)
+	req.Header.Set("Authorization", bearer)
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent {
-		t.Fatalf("delete bootstrap admin (another admin exists) = %d, want 204", rec.Code)
-	}
-
-	// Now admin2 is the last admin; deleting it is refused. The bootstrap
-	// token was just deleted, so authenticate as admin2 itself.
-	req = httptest.NewRequest("DELETE", "/api/tokens/"+created.ID, nil)
-	req.Header.Set("Authorization", admin2)
-	rec = httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("delete last admin (admin2) = %d, want 409", rec.Code)
+		t.Fatalf("delete with another token present: status = %d, want 204", rec.Code)
 	}
 }
 

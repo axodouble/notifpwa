@@ -2,8 +2,9 @@
 
 A tiny self-hosted web app for sending push notifications to your own phone.
 
-Install the site as a PWA (Add to Home Screen), then `POST` to it to push a
-notification to every device that installed it. One Go binary, one SQLite file.
+Install the site as a PWA (Add to Home Screen), join it to one or more named
+**rooms**, then `POST` to a room to push a notification to the devices subscribed
+there. One Go binary, one SQLite file.
 Works on iOS 16.4+, Android, and desktop browsers.
 
 ## How it works
@@ -11,11 +12,10 @@ Works on iOS 16.4+, Android, and desktop browsers.
 1. You run the app behind HTTPS.
 2. On each device, open the site and **Add to Home Screen**, then open the
    installed app and tap **Enable notifications**.
-3. Send a notification to all your devices:
+3. In the installed app, join a room (e.g. `alerts`). Then post to that room — anyone can, no token needed:
 
    ```sh
-   curl -X POST https://notify.example.com/api/send \
-     -H "Authorization: Bearer YOUR_TOKEN" \
+   curl -X POST https://notify.example.com/n/alerts \
      -H "Content-Type: application/json" \
      -d '{"title":"Hello","body":"It works","url":"/"}'
    ```
@@ -27,9 +27,8 @@ Docker image runs this via a `HEALTHCHECK` so `docker ps` reports health.
 
 ## Rooms (topics)
 
-Besides the global broadcast, devices can subscribe to named **rooms**. In the
-installed app, open the Rooms section, join a room by name, and optionally set a
-personal **secret**. Anyone can post to a room — no login — but a notification
+Devices subscribe to named **rooms**. In the installed app, open the Rooms
+section, join a room by name, and optionally set a personal **secret**. Anyone can post to a room — no login — but a notification
 only reaches your device if the post's secret matches the one you set (a device
 with no secret receives only secret-less posts). Every post is logged per room.
 
@@ -121,14 +120,13 @@ Any equivalent (nginx + certbot, Cloudflare Tunnel, etc.) works too.
 
 | Endpoint | Auth | Body | Description |
 |----------|------|------|-------------|
-| `POST /api/send` | `send` | `{"title","body","url"?,"tag"?,"image"?,"actions"?,"urgency"?}` | Push to all devices. `actions` is up to 2 `{title,url}` buttons; `urgency` is `very-low`/`low`/`normal`/`high`. Returns `{"sent","failed","pruned"}`. |
 | `GET /api/devices` | `admin` | — | List subscribed devices with label, user-agent, and timestamps. |
 | `POST /api/devices/label` | `admin` | `{"endpoint","label"}` | Set a friendly label for a device. |
 | `DELETE /api/devices` | `admin` | `{"endpoint"}` | Remove one device. |
-| `GET /api/tokens` | `admin` | — | List tokens (label, prefix, scopes, timestamps). Secrets are never returned. |
-| `POST /api/tokens` | `admin` | `{"label","admin","send"}` | Create a token; the response contains the full `secret` **once**. |
-| `PATCH /api/tokens/{id}` | `admin` | `{"label"?,"admin"?,"send"?}` | Rename or re-scope. Refuses (409) to drop the last admin token unless `API_TOKEN` is set. |
-| `DELETE /api/tokens/{id}` | `admin` | — | Revoke a token. Same last-admin guard as above. |
+| `GET /api/tokens` | `admin` | — | List tokens (label, prefix, timestamps). Secrets are never returned. |
+| `POST /api/tokens` | `admin` | `{"label"}` | Create an admin token; the response contains the full `secret` **once**. |
+| `PATCH /api/tokens/{id}` | `admin` | `{"label"?}` | Rename a token. |
+| `DELETE /api/tokens/{id}` | `admin` | — | Revoke a token. Refuses (409) to delete the last token unless `API_TOKEN` is set. |
 | `POST /api/config` | `admin` | multipart (`name`, `icon`) | Update app name / icon. |
 | `POST /api/subscribe` | none | PushSubscription JSON | Register a device (called by the page). |
 | `POST /n/{room}` | secret* | plaintext, or `{"title","body",…}` (JSON) | Post to a room. Secret via `X-Room-Secret` header or `?secret=`. Delivered to room devices whose secret matches. Returns `{"sent","failed","pruned","recipients"}`. Rate-limited. |
@@ -141,9 +139,9 @@ Any equivalent (nginx + certbot, Cloudflare Tunnel, etc.) works too.
 
 *the room "secret" is a per-subscriber delivery filter set by the device, not an account credential — posting itself needs no auth.
 
-**Auth column:** `send` = a token with the send scope (or an admin session);
-`admin` = a token with the admin scope (or a logged-in admin session).
-`Bearer` tokens go in `Authorization: Bearer <secret>`.
+**Auth column:** `admin` = a token (or a logged-in admin session). `none` = no
+auth. `secret*` = the per-subscriber room secret. `Bearer` tokens go in
+`Authorization: Bearer <secret>`.
 
 ## Project structure
 
@@ -153,7 +151,7 @@ internal/server/     # the application package
   server.go          #   New(), config, VAPID/token bootstrap
   store.go           #   SQLite: settings + subscriptions
   handlers.go        #   HTTP routes and handlers
-  push.go            #   broadcast to all devices + prune dead endpoints
+  push.go            #   push delivery to a subscription list + prune dead endpoints
   rooms.go           #   rooms: schema, membership, room broadcast + handlers
   web/               #   embedded PWA frontend (html/js/service worker/icon)
 ```

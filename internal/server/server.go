@@ -117,7 +117,7 @@ func (s *Server) initTokens() error {
 			return err
 		}
 		if legacy != "" {
-			if _, err := s.store.addToken("Default", legacy, true, true); err != nil {
+			if _, err := s.store.addToken("Default", legacy); err != nil {
 				return err
 			}
 			s.initialToken = legacy // surface once so the operator keeps working access
@@ -129,7 +129,7 @@ func (s *Server) initTokens() error {
 		}
 	}
 	if count == 0 && s.rootToken == "" {
-		_, secret, err := s.store.createToken("Default", true, true)
+		_, secret, err := s.store.createToken("Default")
 		if err != nil {
 			return err
 		}
