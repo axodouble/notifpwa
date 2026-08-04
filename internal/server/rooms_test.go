@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -127,14 +128,19 @@ func TestLogNotificationTrimsAndFiltersPerDevice(t *testing.T) {
 	}
 }
 
-func TestLogCapsAt200(t *testing.T) {
+func TestLogCapsAtMax(t *testing.T) {
 	st := newTestStore(t)
-	for i := 0; i < 205; i++ {
-		st.logNotification("r", "", "t", "b", "", 0, 0)
+	// Insert more than the cap; only the most recent maxRoomLogRows survive.
+	for i := 0; i < maxRoomLogRows+3; i++ {
+		st.logNotification("r", "", "t"+strconv.Itoa(i), "b", "", 0, 0)
 	}
 	all, _ := st.adminRoomLog("r")
-	if len(all) != 200 {
-		t.Fatalf("log length = %d, want 200 (capped)", len(all))
+	if len(all) != maxRoomLogRows {
+		t.Fatalf("log length = %d, want %d (capped)", len(all), maxRoomLogRows)
+	}
+	// adminRoomLog orders newest first, so the first row is the last inserted.
+	if all[0].Title != "t"+strconv.Itoa(maxRoomLogRows+2) {
+		t.Fatalf("newest row = %q, want the last inserted", all[0].Title)
 	}
 }
 

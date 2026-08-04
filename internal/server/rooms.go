@@ -131,8 +131,11 @@ type roomInfo struct {
 	Subscribers int    `json:"subscribers"`
 }
 
+// maxRoomLogRows is how many recent notifications are kept per room.
+const maxRoomLogRows = 5
+
 // logNotification records a post to a room and trims the room's log to the most
-// recent 200 rows.
+// recent maxRoomLogRows rows.
 func (s *store) logNotification(room, secretHash, title, body, url string, sent, failed int) error {
 	if _, err := s.db.Exec(`
 		INSERT INTO notification_log (room, secret_hash, title, body, url, sent, failed, created_at)
@@ -143,8 +146,8 @@ func (s *store) logNotification(room, secretHash, title, body, url string, sent,
 	_, err := s.db.Exec(`
 		DELETE FROM notification_log
 		WHERE room = ? AND id NOT IN (
-			SELECT id FROM notification_log WHERE room = ? ORDER BY id DESC LIMIT 200)`,
-		room, room)
+			SELECT id FROM notification_log WHERE room = ? ORDER BY id DESC LIMIT ?)`,
+		room, room, maxRoomLogRows)
 	return err
 }
 
