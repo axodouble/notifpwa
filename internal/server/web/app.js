@@ -104,7 +104,7 @@ const roomMsgEl = document.getElementById("room-msg");
 function roomMsg(text, kind) {
   roomMsgEl.hidden = !text;
   roomMsgEl.textContent = text || "";
-  roomMsgEl.className = "status" + (kind ? " " + kind : "");
+  roomMsgEl.className = "room-msg" + (kind ? " " + kind : "");
 }
 
 async function showRooms(endpoint) {
@@ -114,98 +114,182 @@ async function showRooms(endpoint) {
 }
 
 async function loadRooms() {
-  const res = await fetch("/api/rooms?endpoint=" + encodeURIComponent(currentEndpoint));
-  const rooms = res.ok ? await res.json() : [];
+  let rooms = [];
+  try {
+    const res = await fetch("/api/rooms?endpoint=" + encodeURIComponent(currentEndpoint));
+    if (res.ok) rooms = await res.json();
+  } catch (_) { /* offline: fall through to empty state */ }
+
   roomListEl.textContent = "";
   if (!rooms.length) {
-    const empty = document.createElement("div");
-    empty.className = "room-log";
-    empty.textContent = "You have not joined any rooms yet.";
+    const empty = document.createElement("p");
+    empty.className = "room-empty";
+    empty.textContent =
+      "You haven't joined any rooms yet. Join one below to start receiving its notifications.";
     roomListEl.appendChild(empty);
+    return;
   }
-  for (const r of rooms) roomListEl.appendChild(roomItem(r));
+  rooms.forEach((r, i) => roomListEl.appendChild(roomRow(r, i)));
 }
 
-function roomItem(r) {
-  const wrap = document.createElement("div");
-  wrap.className = "room-item";
+function closeOtherRooms(except) {
+  roomListEl.querySelectorAll(".room-toggle[aria-expanded='true']").forEach((t) => {
+    if (t !== except) {
+      t.setAttribute("aria-expanded", "false");
+      t.nextElementSibling.hidden = true;
+    }
+  });
+}
 
-  const head = document.createElement("div");
-  head.className = "room-head";
+function roomRow(r, i) {
+  const row = document.createElement("div");
+  row.className = "room";
+
+  const panelId = "room-panel-" + i;
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "room-toggle";
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.setAttribute("aria-controls", panelId);
+
   const name = document.createElement("span");
   name.className = "room-name";
-  name.textContent = r.room + (r.has_secret ? " 🔒" : "");
-  const actions = document.createElement("div");
-  actions.className = "room-actions";
+  name.textContent = r.room;
 
-  const secretBtn = document.createElement("button");
-  secretBtn.type = "button";
-  secretBtn.className = "ghost";
-  secretBtn.textContent = r.has_secret ? "Change secret" : "Set secret";
-  secretBtn.addEventListener("click", () => setSecret(r.room));
+  const flags = document.createElement("span");
+  flags.className = "room-flags";
+  if (r.has_secret) {
+    const lock = document.createElement("span");
+    lock.className = "room-lock";
+    lock.title = "Secret set";
+    lock.textContent = "🔒";
+    flags.appendChild(lock);
+  }
+  const chev = document.createElement("span");
+  chev.className = "room-chevron";
+  chev.setAttribute("aria-hidden", "true");
+  flags.appendChild(chev);
+  toggle.append(name, flags);
 
-  const clearBtn = document.createElement("button");
-  clearBtn.type = "button";
-  clearBtn.className = "ghost";
-  clearBtn.textContent = "Clear";
-  clearBtn.hidden = !r.has_secret;
-  clearBtn.addEventListener("click", () => clearSecret(r.room));
-
-  const leaveBtn = document.createElement("button");
-  leaveBtn.type = "button";
-  leaveBtn.textContent = "Leave";
-  leaveBtn.addEventListener("click", () => leaveRoom(r.room));
-
-  actions.append(secretBtn, clearBtn, leaveBtn);
-  head.append(name, actions);
-
-  const logBtn = document.createElement("button");
-  logBtn.type = "button";
-  logBtn.className = "ghost";
-  logBtn.style.marginTop = "8px";
-  logBtn.textContent = "Recent";
-  const logEl = document.createElement("div");
-  logEl.className = "room-log";
-  logEl.hidden = true;
-  logBtn.addEventListener("click", async () => {
-    logEl.hidden = !logEl.hidden;
-    if (!logEl.hidden) await loadRoomLog(r.room, logEl);
+  const panel = buildRoomPanel(r, panelId);
+  let logged = false;
+  toggle.addEventListener("click", () => {
+    const open = toggle.getAttribute("aria-expanded") === "true";
+    if (open) {
+      toggle.setAttribute("aria-expanded", "false");
+      panel.hidden = true;
+      return;
+    }
+    closeOtherRooms(toggle);
+    toggle.setAttribute("aria-expanded", "true");
+    panel.hidden = false;
+    if (!logged) {
+      logged = true;
+      loadRoomLog(r.room, panel.querySelector(".room-recent"));
+    }
   });
 
-  wrap.append(head, logBtn, logEl);
-  return wrap;
+  row.append(toggle, panel);
+  return row;
+}
+
+function buildRoomPanel(r, panelId) {
+  const panel = document.createElement("div");
+  panel.className = "room-panel";
+  panel.id = panelId;
+  panel.hidden = true;
+
+  const state = document.createElement("p");
+  state.className = "room-secret-state";
+  state.textContent = r.has_secret ? "Secret set" : "No secret";
+
+  const secretRow = document.createElement("div");
+  secretRow.className = "room-secret-row";
+  const input = document.createElement("input");
+  input.type = "password";
+  input.className = "room-secret-input";
+  input.autocomplete = "new-password";
+  input.placeholder = r.has_secret ? "Change secret" : "Set a secret";
+  const save = document.createElement("button");
+  save.type = "button";
+  save.className = "room-btn";
+  save.textContent = "Save";
+  save.addEventListener("click", () => {
+    if (input.value === "") return; // empty Save is a no-op; use Clear to remove
+    saveSecret(r.room, input.value);
+  });
+  secretRow.append(input, save);
+  if (r.has_secret) {
+    const clear = document.createElement("button");
+    clear.type = "button";
+    clear.className = "room-btn ghost";
+    clear.textContent = "Clear";
+    clear.addEventListener("click", () => saveSecret(r.room, ""));
+    secretRow.append(clear);
+  }
+
+  const recentLabel = document.createElement("p");
+  recentLabel.className = "room-recent-label";
+  recentLabel.textContent = "Recent";
+  const recent = document.createElement("div");
+  recent.className = "room-recent";
+  recent.textContent = "Loading…";
+
+  const leave = document.createElement("button");
+  leave.type = "button";
+  leave.className = "room-leave";
+  leave.textContent = "Leave room";
+  leave.addEventListener("click", () => leaveRoom(r.room));
+
+  panel.append(state, secretRow, recentLabel, recent, leave);
+  return panel;
 }
 
 async function loadRoomLog(room, el) {
-  const res = await fetch(
-    "/api/rooms/log?endpoint=" + encodeURIComponent(currentEndpoint) + "&room=" + encodeURIComponent(room));
-  const posts = res.ok ? await res.json() : [];
+  let posts = [];
+  try {
+    const res = await fetch(
+      "/api/rooms/log?endpoint=" + encodeURIComponent(currentEndpoint) +
+      "&room=" + encodeURIComponent(room));
+    if (res.ok) posts = await res.json();
+  } catch (_) { /* ignore */ }
   el.textContent = "";
-  if (!posts.length) { el.textContent = "No received notifications."; return; }
+  if (!posts.length) { el.textContent = "No notifications received yet."; return; }
   for (const p of posts) {
-    const row = document.createElement("div");
-    const when = new Date(p.created_at * 1000).toLocaleString();
-    row.textContent = when + " — " + (p.title || "") + (p.body ? ": " + p.body : "");
-    el.appendChild(row);
+    const item = document.createElement("div");
+    item.className = "room-recent-item";
+    const when = document.createElement("span");
+    when.className = "room-recent-when";
+    when.textContent = new Date(p.created_at * 1000).toLocaleString();
+    const text = document.createElement("span");
+    text.className = "room-recent-text";
+    text.textContent = (p.title || "") + (p.body ? ": " + p.body : "");
+    item.append(when, text);
+    el.appendChild(item);
   }
 }
 
-async function postRoom(method, room, secret) {
+async function apiRoom(method, room, secret) {
   const body = { endpoint: currentEndpoint, room };
   if (secret !== undefined) body.secret = secret;
-  const res = await fetch("/api/rooms", {
-    method,
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return res.ok;
+  try {
+    const res = await fetch("/api/rooms", {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return res.ok;
+  } catch (_) {
+    return false;
+  }
 }
 
-async function joinRoomByName() {
+async function joinRoomByName(e) {
+  if (e) e.preventDefault();
   const input = document.getElementById("room-name");
   const room = input.value.trim();
   if (!room) return;
-  if (await postRoom("POST", room)) {
+  if (await apiRoom("POST", room)) {
     input.value = "";
     roomMsg("Joined " + room + ".", "ok");
     await loadRooms();
@@ -214,33 +298,24 @@ async function joinRoomByName() {
   }
 }
 
-async function setSecret(room) {
-  const secret = prompt("Secret for room \"" + room + "\" (posts must include it to reach you):");
-  if (secret === null) return;
-  if (await postRoom("POST", room, secret)) {
-    roomMsg("Secret updated for " + room + ".", "ok");
+async function saveSecret(room, secret) {
+  if (await apiRoom("POST", room, secret)) {
+    roomMsg(secret === "" ? "Secret cleared for " + room + "." : "Secret updated for " + room + ".", "ok");
     await loadRooms();
   } else {
-    roomMsg("Could not update secret.", "err");
-  }
-}
-
-async function clearSecret(room) {
-  if (await postRoom("POST", room, "")) {
-    roomMsg("Secret cleared for " + room + ".", "ok");
-    await loadRooms();
+    roomMsg("Could not update the secret.", "err");
   }
 }
 
 async function leaveRoom(room) {
-  const res = await fetch("/api/rooms", {
-    method: "DELETE",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ endpoint: currentEndpoint, room }),
-  });
-  if (res.ok) { roomMsg("Left " + room + ".", "ok"); await loadRooms(); }
+  if (await apiRoom("DELETE", room)) {
+    roomMsg("Left " + room + ".", "ok");
+    await loadRooms();
+  } else {
+    roomMsg("Could not leave " + room + ".", "err");
+  }
 }
 
-document.getElementById("room-add").addEventListener("click", joinRoomByName);
+document.getElementById("room-join").addEventListener("submit", joinRoomByName);
 
 init();
