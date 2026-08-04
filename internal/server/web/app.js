@@ -4,10 +4,20 @@
 const statusEl = document.getElementById("status");
 const btn = document.getElementById("enable");
 const iosHint = document.getElementById("ios-hint");
+const subEl = document.querySelector("p.sub");
 
 function setStatus(msg, kind) {
   statusEl.textContent = msg;
   statusEl.className = "status" + (kind ? " " + kind : "");
+}
+
+// Once notifications are on and working, hide the enable button, the status
+// badge, and the call-to-action sub-line — the Rooms UI becomes the focus.
+// These are only shown when the user still needs to act.
+function hideEnableChrome() {
+  btn.hidden = true;
+  statusEl.hidden = true;
+  if (subEl) subEl.hidden = true;
 }
 
 // VAPID public key (base64url) -> Uint8Array for applicationServerKey.
@@ -36,9 +46,7 @@ async function init() {
   const existing = await reg.pushManager.getSubscription();
 
   if (Notification.permission === "granted" && existing) {
-    setStatus("Notifications are on for this device. ✓", "ok");
-    btn.textContent = "Notifications enabled";
-    btn.disabled = true;
+    hideEnableChrome();
     showRooms(existing.endpoint);
     return;
   }
@@ -83,8 +91,7 @@ async function enable() {
     });
     if (!res.ok) throw new Error("server rejected subscription");
 
-    setStatus("Notifications are on for this device. ✓", "ok");
-    btn.textContent = "Notifications enabled";
+    hideEnableChrome();
     showRooms(sub.endpoint);
   } catch (err) {
     setStatus("Could not enable notifications: " + err.message, "err");
