@@ -120,7 +120,6 @@ Any equivalent (nginx + certbot, Cloudflare Tunnel, etc.) works too.
 
 | Endpoint | Auth | Body | Description |
 |----------|------|------|-------------|
-| `POST /api/send` | `send` | `{"title","body","url"?,"tag"?,"image"?,"actions"?,"urgency"?}` | Push to all devices. `actions` is up to 2 `{title,url}` buttons; `urgency` is `very-low`/`low`/`normal`/`high`. Returns `{"sent","failed","pruned"}`. |
 | `GET /api/devices` | `admin` | — | List subscribed devices with label, user-agent, and timestamps. |
 | `POST /api/devices/label` | `admin` | `{"endpoint","label"}` | Set a friendly label for a device. |
 | `DELETE /api/devices` | `admin` | `{"endpoint"}` | Remove one device. |
