@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	webpush "github.com/SherClockHolmes/webpush-go"
 )
 
 func TestSubscribeStoresDevice(t *testing.T) {
@@ -34,83 +32,6 @@ func TestSubscribeRejectsIncomplete(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
-	}
-}
-
-func TestSendRequiresToken(t *testing.T) {
-	s := newTestApp(t)
-
-	// No token.
-	req := httptest.NewRequest("POST", "/api/send", strings.NewReader(`{"title":"hi"}`))
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("no token: status = %d, want 401", rec.Code)
-	}
-
-	// Wrong token.
-	req = httptest.NewRequest("POST", "/api/send", strings.NewReader(`{"title":"hi"}`))
-	req.Header.Set("Authorization", "Bearer wrong")
-	rec = httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("wrong token: status = %d, want 401", rec.Code)
-	}
-}
-
-func TestSendWithValidTokenBroadcasts(t *testing.T) {
-	s := newTestApp(t)
-	s.store.upsertSubscription(mkSub("https://push/a"), "")
-
-	orig := sendOne
-	t.Cleanup(func() { sendOne = orig })
-	called := 0
-	sendOne = func(_ []byte, _ *webpush.Subscription, _ *webpush.Options) (*http.Response, error) {
-		called++
-		return stubResp(201), nil
-	}
-
-	req := httptest.NewRequest("POST", "/api/send", strings.NewReader(`{"title":"hi","body":"yo"}`))
-	req.Header.Set("Authorization", "Bearer "+s.InitialToken())
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	if called != 1 {
-		t.Fatalf("sendOne called %d times, want 1", called)
-	}
-	var res sendResult
-	json.Unmarshal(rec.Body.Bytes(), &res)
-	if res.Sent != 1 {
-		t.Fatalf("sent = %d, want 1", res.Sent)
-	}
-}
-
-func TestSendCapsActionsToTwo(t *testing.T) {
-	s := newTestApp(t)
-	s.store.upsertSubscription(mkSub("https://push/a"), "")
-
-	orig := sendOne
-	t.Cleanup(func() { sendOne = orig })
-	var payload pushPayload
-	sendOne = func(msg []byte, _ *webpush.Subscription, _ *webpush.Options) (*http.Response, error) {
-		json.Unmarshal(msg, &payload)
-		return stubResp(201), nil
-	}
-
-	body := `{"title":"hi","actions":[{"title":"a","url":"/a"},{"title":"b","url":"/b"},{"title":"c","url":"/c"}]}`
-	req := httptest.NewRequest("POST", "/api/send", strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+s.InitialToken())
-	rec := httptest.NewRecorder()
-	s.Handler().ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("send = %d, want 200", rec.Code)
-	}
-	if len(payload.Actions) != 2 {
-		t.Fatalf("actions len = %d, want 2 (capped)", len(payload.Actions))
 	}
 }
 

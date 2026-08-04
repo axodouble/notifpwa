@@ -211,24 +211,6 @@ func (s *store) setDeviceLabel(endpoint, label string) error {
 	return err
 }
 
-func (s *store) listSubscriptions() ([]subscription, error) {
-	rows, err := s.db.Query(`SELECT endpoint, p256dh, auth FROM subscriptions`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var subs []subscription
-	for rows.Next() {
-		var sub subscription
-		if err := rows.Scan(&sub.Endpoint, &sub.Keys.P256dh, &sub.Keys.Auth); err != nil {
-			return nil, err
-		}
-		subs = append(subs, sub)
-	}
-	return subs, rows.Err()
-}
-
 func (s *store) deleteSubscription(endpoint string) error {
 	_, err := s.db.Exec(`DELETE FROM subscriptions WHERE endpoint = ?`, endpoint)
 	return err

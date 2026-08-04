@@ -72,14 +72,6 @@ func TestSubscriptionUpsertAndDelete(t *testing.T) {
 		t.Fatalf("count = %d, want 2", n)
 	}
 
-	subs, err := st.listSubscriptions()
-	if err != nil {
-		t.Fatalf("list: %v", err)
-	}
-	if len(subs) != 2 {
-		t.Fatalf("listed %d, want 2", len(subs))
-	}
-
 	if err := st.deleteSubscription("https://push/a"); err != nil {
 		t.Fatalf("delete: %v", err)
 	}

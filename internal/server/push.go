@@ -40,15 +40,6 @@ var sendOne = func(msg []byte, sub *webpush.Subscription, opts *webpush.Options)
 	return webpush.SendNotification(msg, sub, opts)
 }
 
-// broadcast sends the payload to every stored device.
-func (s *Server) broadcast(p pushPayload) (sendResult, error) {
-	subs, err := s.store.listSubscriptions()
-	if err != nil {
-		return sendResult{}, err
-	}
-	return s.sendToSubs(subs, p)
-}
-
 // sendToSubs delivers p to the given subscriptions, pruning endpoints that
 // report they are gone (404/410) and counting sent/failed/pruned.
 func (s *Server) sendToSubs(subs []subscription, p pushPayload) (sendResult, error) {
