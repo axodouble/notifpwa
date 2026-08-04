@@ -110,6 +110,11 @@ func (s *store) migrate() error {
 			}
 		}
 	}
+
+	// Rooms-only: a token without the admin scope grants nothing now — drop it.
+	if _, err := s.db.Exec(`DELETE FROM tokens WHERE scope_admin = 0`); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -228,8 +233,6 @@ type tokenRecord struct {
 	ID         string
 	Label      string
 	Prefix     string
-	ScopeAdmin bool
-	ScopeSend  bool
 	CreatedAt  int64
 	LastUsedAt int64
 }
@@ -239,16 +242,9 @@ func hashToken(secret string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func b2i(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
-// addToken inserts a token with a caller-supplied secret. Used by createToken
-// (random secret) and by the legacy-token migration (known secret).
-func (s *store) addToken(label, secret string, admin, send bool) (string, error) {
+// addToken inserts a token with a caller-supplied secret. All tokens are admin
+// credentials (scope_admin=1); scope_send is retained as a dormant column.
+func (s *store) addToken(label, secret string) (string, error) {
 	id := randomHex(8)
 	prefix := secret
 	if len(prefix) > 6 {
@@ -256,19 +252,18 @@ func (s *store) addToken(label, secret string, admin, send bool) (string, error)
 	}
 	_, err := s.db.Exec(`
 		INSERT INTO tokens (id, label, token_hash, prefix, scope_admin, scope_send, created_at, last_used_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
-		id, label, hashToken(secret), prefix, b2i(admin), b2i(send), time.Now().Unix())
+		VALUES (?, ?, ?, ?, 1, 0, ?, 0)`,
+		id, label, hashToken(secret), prefix, time.Now().Unix())
 	if err != nil {
 		return "", err
 	}
 	return id, nil
 }
 
-// createToken generates a fresh random secret and stores its hash. The returned
-// secret is the only time the plaintext exists — surface it once, then forget.
-func (s *store) createToken(label string, admin, send bool) (id, secret string, err error) {
+// createToken generates a fresh random admin token and returns the one-time secret.
+func (s *store) createToken(label string) (id, secret string, err error) {
 	secret = randomHex(32)
-	id, err = s.addToken(label, secret, admin, send)
+	id, err = s.addToken(label, secret)
 	if err != nil {
 		return "", "", err
 	}
@@ -282,18 +277,16 @@ func (s *store) lookupToken(secret string) (*tokenRecord, error) {
 		return nil, nil
 	}
 	var t tokenRecord
-	var admin, send int
 	err := s.db.QueryRow(`
-		SELECT id, label, prefix, scope_admin, scope_send, created_at, last_used_at
+		SELECT id, label, prefix, created_at, last_used_at
 		FROM tokens WHERE token_hash = ?`, hashToken(secret)).
-		Scan(&t.ID, &t.Label, &t.Prefix, &admin, &send, &t.CreatedAt, &t.LastUsedAt)
+		Scan(&t.ID, &t.Label, &t.Prefix, &t.CreatedAt, &t.LastUsedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	t.ScopeAdmin, t.ScopeSend = admin == 1, send == 1
 	s.db.Exec(`UPDATE tokens SET last_used_at = ? WHERE id = ?`, time.Now().Unix(), t.ID) // best-effort
 	return &t, nil
 }
@@ -304,15 +297,9 @@ func (s *store) countTokens() (int, error) {
 	return n, err
 }
 
-func (s *store) countAdminTokens() (int, error) {
-	var n int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM tokens WHERE scope_admin = 1`).Scan(&n)
-	return n, err
-}
-
 func (s *store) listTokens() ([]tokenRecord, error) {
 	rows, err := s.db.Query(`
-		SELECT id, label, prefix, scope_admin, scope_send, created_at, last_used_at
+		SELECT id, label, prefix, created_at, last_used_at
 		FROM tokens ORDER BY created_at`)
 	if err != nil {
 		return nil, err
@@ -321,11 +308,9 @@ func (s *store) listTokens() ([]tokenRecord, error) {
 	var out []tokenRecord
 	for rows.Next() {
 		var t tokenRecord
-		var admin, send int
-		if err := rows.Scan(&t.ID, &t.Label, &t.Prefix, &admin, &send, &t.CreatedAt, &t.LastUsedAt); err != nil {
+		if err := rows.Scan(&t.ID, &t.Label, &t.Prefix, &t.CreatedAt, &t.LastUsedAt); err != nil {
 			return nil, err
 		}
-		t.ScopeAdmin, t.ScopeSend = admin == 1, send == 1
 		out = append(out, t)
 	}
 	return out, rows.Err()
@@ -333,39 +318,43 @@ func (s *store) listTokens() ([]tokenRecord, error) {
 
 func (s *store) tokenByID(id string) (*tokenRecord, error) {
 	var t tokenRecord
-	var admin, send int
 	err := s.db.QueryRow(`
-		SELECT id, label, prefix, scope_admin, scope_send, created_at, last_used_at
+		SELECT id, label, prefix, created_at, last_used_at
 		FROM tokens WHERE id = ?`, id).
-		Scan(&t.ID, &t.Label, &t.Prefix, &admin, &send, &t.CreatedAt, &t.LastUsedAt)
+		Scan(&t.ID, &t.Label, &t.Prefix, &t.CreatedAt, &t.LastUsedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	t.ScopeAdmin, t.ScopeSend = admin == 1, send == 1
 	return &t, nil
 }
 
-// updateToken applies whichever of label/admin/send are non-nil.
-func (s *store) updateToken(id string, label *string, admin, send *bool) error {
+func (s *store) updateToken(id string, label *string) error {
 	if label != nil {
 		if _, err := s.db.Exec(`UPDATE tokens SET label = ? WHERE id = ?`, *label, id); err != nil {
 			return err
 		}
 	}
-	if admin != nil {
-		if _, err := s.db.Exec(`UPDATE tokens SET scope_admin = ? WHERE id = ?`, b2i(*admin), id); err != nil {
-			return err
-		}
-	}
-	if send != nil {
-		if _, err := s.db.Exec(`UPDATE tokens SET scope_send = ? WHERE id = ?`, b2i(*send), id); err != nil {
-			return err
-		}
-	}
 	return nil
+}
+
+// wouldStrandAdmin reports whether deleting token id would remove the last
+// token. Only meaningful when no root token is configured.
+func (s *store) wouldStrandAdmin(id string) (bool, error) {
+	count, err := s.countTokens()
+	if err != nil {
+		return false, err
+	}
+	if count > 1 {
+		return false, nil
+	}
+	rec, err := s.tokenByID(id)
+	if err != nil {
+		return false, err
+	}
+	return rec != nil, nil
 }
 
 func (s *store) deleteToken(id string) (bool, error) {

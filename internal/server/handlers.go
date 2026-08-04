@@ -178,7 +178,7 @@ func (s *Server) callerIsAdmin(r *http.Request) bool {
 		return true
 	}
 	if rec, err := s.store.lookupToken(secret); err == nil && rec != nil {
-		return rec.ScopeAdmin
+		return true
 	}
 	return false
 }
@@ -325,7 +325,6 @@ func (s *Server) handleDeleteDevice(w http.ResponseWriter, r *http.Request) {
 func tokenJSON(t tokenRecord) map[string]any {
 	return map[string]any{
 		"id": t.ID, "label": t.Label, "prefix": t.Prefix,
-		"admin": t.ScopeAdmin, "send": t.ScopeSend,
 		"created_at": t.CreatedAt, "last_used_at": t.LastUsedAt,
 	}
 }
@@ -347,27 +346,20 @@ func (s *Server) handleListTokens(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleCreateToken(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Label string `json:"label"`
-		Admin bool   `json:"admin"`
-		Send  bool   `json:"send"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	if !body.Admin && !body.Send {
-		http.Error(w, "token needs at least one scope", http.StatusBadRequest)
-		return
-	}
 	label := strings.TrimSpace(body.Label)
-	id, secret, err := s.store.createToken(label, body.Admin, body.Send)
+	id, secret, err := s.store.createToken(label)
 	if err != nil {
 		http.Error(w, "could not create token", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"id": id, "secret": secret, "prefix": secret[:6],
-		"label": label, "admin": body.Admin, "send": body.Send,
+		"id": id, "secret": secret, "prefix": secret[:6], "label": label,
 	})
 }
 
@@ -375,14 +367,11 @@ func (s *Server) handleUpdateToken(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	var body struct {
 		Label *string `json:"label"`
-		Admin *bool   `json:"admin"`
-		Send  *bool   `json:"send"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
 		http.Error(w, "invalid request", http.StatusBadRequest)
 		return
 	}
-	// Verify token exists.
 	rec, err := s.store.tokenByID(id)
 	if err != nil {
 		http.Error(w, "could not check token", http.StatusInternalServerError)
@@ -392,18 +381,7 @@ func (s *Server) handleUpdateToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
-	if body.Admin != nil && !*body.Admin && s.rootToken == "" {
-		stranded, err := s.wouldStrandAdmin(id)
-		if err != nil {
-			http.Error(w, "could not check tokens", http.StatusInternalServerError)
-			return
-		}
-		if stranded {
-			http.Error(w, "refusing to remove the last admin token; set API_TOKEN first", http.StatusConflict)
-			return
-		}
-	}
-	if err := s.store.updateToken(id, body.Label, body.Admin, body.Send); err != nil {
+	if err := s.store.updateToken(id, body.Label); err != nil {
 		http.Error(w, "could not update token", http.StatusInternalServerError)
 		return
 	}
@@ -413,7 +391,7 @@ func (s *Server) handleUpdateToken(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if s.rootToken == "" {
-		stranded, err := s.wouldStrandAdmin(id)
+		stranded, err := s.store.wouldStrandAdmin(id)
 		if err != nil {
 			http.Error(w, "could not check tokens", http.StatusInternalServerError)
 			return
@@ -433,24 +411,4 @@ func (s *Server) handleDeleteToken(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// wouldStrandAdmin reports whether deleting or downgrading token id would leave
-// no admin-scoped tokens. Only meaningful when no root token is configured.
-func (s *Server) wouldStrandAdmin(id string) (bool, error) {
-	count, err := s.store.countAdminTokens()
-	if err != nil {
-		return false, err
-	}
-	if count > 1 {
-		return false, nil
-	}
-	rec, err := s.store.tokenByID(id)
-	if err != nil {
-		return false, err
-	}
-	if rec == nil {
-		return false, nil
-	}
-	return rec.ScopeAdmin && count == 1, nil
 }
