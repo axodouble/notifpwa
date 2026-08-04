@@ -150,12 +150,16 @@
     </div>
 
     <div class="card">
-      <h3>Send a test</h3>
+      <h3>Send a test to a room</h3>
+      <label>Room</label>
+      <input type="text" id="t-room" placeholder="e.g. alerts">
+      <label>Secret (optional)</label>
+      <input type="text" id="t-secret" placeholder="only if the device set a room secret">
       <label>Title</label>
       <input type="text" id="t-title" value="Hello">
       <label>Body</label>
       <input type="text" id="t-body" value="It works 🎉">
-      <button id="send">Send to all devices</button>
+      <button id="send">Send test</button>
       <div class="msg" id="send-msg"></div>
     </div>
 
@@ -171,17 +175,12 @@
 
     <div class="card">
       <h3>Tokens</h3>
-      <p class="muted">Each token can access the admin panel, send notifications, or both.
-        Secrets are shown once at creation — copy them then.</p>
+      <p class="muted">Tokens grant admin panel + API access. Secrets are shown once at creation — copy them then.</p>
       <div id="tokens" class="token-list muted">Loading…</div>
 
       <h3 style="margin-top:22px">New token</h3>
       <label>Label</label>
-      <input type="text" id="tk-label" placeholder="e.g. Zabbix">
-      <div class="checks">
-        <label><input type="checkbox" id="tk-admin"> Admin panel access</label>
-        <label><input type="checkbox" id="tk-send" checked> Send notifications</label>
-      </div>
+      <input type="text" id="tk-label" placeholder="e.g. CI">
       <button id="tk-create">Create token</button>
       <div class="msg" id="tk-msg"></div>
       <div class="secret-box" id="tk-secret" hidden>
