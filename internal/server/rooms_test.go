@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -491,5 +492,35 @@ func TestAdminRoomsRequireAuthAndReturnData(t *testing.T) {
 	s.Handler().ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"title":"Deploy"`) {
 		t.Fatalf("admin log = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRoomPostCapsActionsToTwo(t *testing.T) {
+	s := newTestApp(t)
+	s.store.upsertSubscription(mkSub("https://push/a"), "")
+	if err := s.store.joinRoom("r", "https://push/a", nil); err != nil {
+		t.Fatalf("joinRoom: %v", err)
+	}
+	orig := sendOne
+	t.Cleanup(func() { sendOne = orig })
+	var msg []byte
+	sendOne = func(m []byte, _ *webpush.Subscription, _ *webpush.Options) (*http.Response, error) {
+		msg = m
+		return stubResp(201), nil
+	}
+	body := `{"title":"hi","actions":[{"title":"a","url":"/a"},{"title":"b","url":"/b"},{"title":"c","url":"/c"}]}`
+	req := httptest.NewRequest("POST", "/n/r", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var p pushPayload
+	if err := json.Unmarshal(msg, &p); err != nil {
+		t.Fatalf("unmarshal sent msg: %v", err)
+	}
+	if len(p.Actions) != 2 {
+		t.Fatalf("actions = %d, want capped to 2", len(p.Actions))
 	}
 }
