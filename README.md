@@ -2,8 +2,9 @@
 
 A tiny self-hosted web app for sending push notifications to your own phone.
 
-Install the site as a PWA (Add to Home Screen), then `POST` to it to push a
-notification to every device that installed it. One Go binary, one SQLite file.
+Install the site as a PWA (Add to Home Screen), join it to one or more named
+**rooms**, then `POST` to a room to push a notification to the devices subscribed
+there. One Go binary, one SQLite file.
 Works on iOS 16.4+, Android, and desktop browsers.
 
 ## How it works
@@ -11,11 +12,10 @@ Works on iOS 16.4+, Android, and desktop browsers.
 1. You run the app behind HTTPS.
 2. On each device, open the site and **Add to Home Screen**, then open the
    installed app and tap **Enable notifications**.
-3. Send a notification to all your devices:
+3. In the installed app, join a room (e.g. `alerts`). Then post to that room — anyone can, no token needed:
 
    ```sh
-   curl -X POST https://notify.example.com/api/send \
-     -H "Authorization: Bearer YOUR_TOKEN" \
+   curl -X POST https://notify.example.com/n/alerts \
      -H "Content-Type: application/json" \
      -d '{"title":"Hello","body":"It works","url":"/"}'
    ```
@@ -27,9 +27,8 @@ Docker image runs this via a `HEALTHCHECK` so `docker ps` reports health.
 
 ## Rooms (topics)
 
-Besides the global broadcast, devices can subscribe to named **rooms**. In the
-installed app, open the Rooms section, join a room by name, and optionally set a
-personal **secret**. Anyone can post to a room — no login — but a notification
+Devices subscribe to named **rooms**. In the installed app, open the Rooms
+section, join a room by name, and optionally set a personal **secret**. Anyone can post to a room — no login — but a notification
 only reaches your device if the post's secret matches the one you set (a device
 with no secret receives only secret-less posts). Every post is logged per room.
 
@@ -153,7 +152,7 @@ internal/server/     # the application package
   server.go          #   New(), config, VAPID/token bootstrap
   store.go           #   SQLite: settings + subscriptions
   handlers.go        #   HTTP routes and handlers
-  push.go            #   broadcast to all devices + prune dead endpoints
+  push.go            #   push delivery to a subscription list + prune dead endpoints
   rooms.go           #   rooms: schema, membership, room broadcast + handlers
   web/               #   embedded PWA frontend (html/js/service worker/icon)
 ```
