@@ -134,17 +134,34 @@ func (s *Server) handleIcon(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
+// maxDeviceIDLen bounds the client-generated device id (a UUID is 36 chars).
+const maxDeviceIDLen = 128
+
+// handleSubscribe registers a device's current push subscription. The client
+// posts the PushSubscription plus its own stable device_id, and the service
+// worker may instead name the old_endpoint it is replacing; either lets the
+// server recognise a returning device and carry its rooms across. The PWA
+// re-posts on every launch, so this doubles as the repair path when a device
+// and the server have drifted apart.
 func (s *Server) handleSubscribe(w http.ResponseWriter, r *http.Request) {
-	var sub subscription
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&sub); err != nil {
+	var body struct {
+		subscription
+		OldEndpoint string `json:"old_endpoint"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<16)).Decode(&body); err != nil {
 		http.Error(w, "invalid subscription", http.StatusBadRequest)
 		return
 	}
+	sub := body.subscription
 	if sub.Endpoint == "" || sub.Keys.P256dh == "" || sub.Keys.Auth == "" {
 		http.Error(w, "incomplete subscription", http.StatusBadRequest)
 		return
 	}
-	if err := s.store.upsertSubscription(sub, r.UserAgent()); err != nil {
+	if len(sub.DeviceID) > maxDeviceIDLen {
+		http.Error(w, "device_id too long", http.StatusBadRequest)
+		return
+	}
+	if err := s.store.upsertSubscriptionFrom(sub, r.UserAgent(), body.OldEndpoint); err != nil {
 		http.Error(w, "could not store subscription", http.StatusInternalServerError)
 		return
 	}

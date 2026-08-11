@@ -124,6 +124,14 @@ Any equivalent (nginx + certbot, Cloudflare Tunnel, etc.) works too.
 - Push only works **after** the user taps *Share → Add to Home Screen* and opens
   the app from the Home Screen. The permission prompt does not appear in Safari
   itself — only in the installed PWA. The app shows this hint on iOS.
+- **iOS revokes push subscriptions on its own**, typically after the app has sat
+  unopened for a while. Notification permission stays granted, but the
+  subscription is gone and its endpoint is dead. iOS does not implement
+  `pushsubscriptionchange`, and Safari wants a user gesture to create the
+  replacement, so one tap of *Enable* is unavoidable when this happens.
+  It is only a tap: the app keeps a stable `device_id`, so the new subscription
+  is recognised as the same device and **rooms and secrets are kept**. The app
+  re-posts its subscription on every launch, which is what performs the repair.
 
 ## API
 
@@ -137,7 +145,7 @@ Any equivalent (nginx + certbot, Cloudflare Tunnel, etc.) works too.
 | `PATCH /api/tokens/{id}` | `admin` | `{"label"?}` | Rename a token. |
 | `DELETE /api/tokens/{id}` | `admin` | — | Revoke a token. Refuses (409) to delete the last token unless `API_TOKEN` is set. |
 | `POST /api/config` | `admin` | multipart (`name`, `icon`) | Update app name / icon. |
-| `POST /api/subscribe` | none | PushSubscription JSON | Register a device (called by the page). |
+| `POST /api/subscribe` | none | PushSubscription JSON + `device_id`, or `old_endpoint` | Register a device (called by the page on every launch). `device_id` is a stable client id: when a push endpoint rotates, the device's rooms move to the new endpoint instead of being lost. `old_endpoint` does the same for the service worker, which cannot read `device_id`. |
 | `POST /n/{room}` | secret* | plaintext, or `{"title","body",…}` (JSON) | Post to a room. Secret via `X-Room-Secret` header or `?secret=`. Delivered to room devices whose secret matches. Returns `{"sent","failed","pruned","recipients"}`. Rate-limited. |
 | `GET /api/rooms` | none | `?endpoint=` | List the rooms a device belongs to (`[{"room","has_secret"}]`). |
 | `POST /api/rooms` | none | `{"endpoint","room","secret"?}` | Join a room / set-or-clear its secret. `secret:""` clears; omit to leave unchanged. |
@@ -160,7 +168,7 @@ internal/server/     # the application package
   server.go          #   New(), config, VAPID/token bootstrap
   store.go           #   SQLite: settings + subscriptions
   handlers.go        #   HTTP routes and handlers
-  push.go            #   push delivery to a subscription list + prune dead endpoints
+  push.go            #   push delivery to a subscription list + expire dead endpoints
   rooms.go           #   rooms: schema, membership, room broadcast + handlers
   web/               #   embedded PWA frontend (html/js/service worker/icon)
 ```

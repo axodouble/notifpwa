@@ -71,7 +71,10 @@ func (s *Server) sendToSubs(subs []subscription, p pushPayload) (sendResult, err
 
 		switch {
 		case resp.StatusCode == http.StatusGone || resp.StatusCode == http.StatusNotFound:
-			_ = s.store.deleteSubscription(sub.Endpoint)
+			// Expire rather than delete. Deleting cascades the device's room
+			// memberships away, and iOS revokes subscriptions routinely — the
+			// user would have to rejoin every room after re-enabling.
+			_ = s.store.expireSubscription(sub.Endpoint)
 			res.Pruned++
 		case resp.StatusCode >= 200 && resp.StatusCode < 300:
 			res.Sent++

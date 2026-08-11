@@ -34,6 +34,49 @@ const isStandalone =
   window.matchMedia("(display-mode: standalone)").matches ||
   window.navigator.standalone === true;
 
+// --- Device identity -------------------------------------------------------
+// A push endpoint is not a stable identity. iOS in particular revokes a PWA's
+// subscription after a stretch of inactivity, and the replacement carries a
+// different endpoint — which the server would otherwise read as a brand-new
+// device with no rooms. This id outlives those subscriptions and is what the
+// server uses to hand the old device's rooms to its new endpoint.
+const DEVICE_ID_KEY = "notifpwa_device_id";
+
+function deviceId() {
+  let id = null;
+  try { id = localStorage.getItem(DEVICE_ID_KEY); } catch (_) { /* storage blocked */ }
+  if (id) return id;
+  id = crypto.randomUUID
+    ? crypto.randomUUID()
+    : Array.from(crypto.getRandomValues(new Uint8Array(16)),
+        (b) => b.toString(16).padStart(2, "0")).join("");
+  try { localStorage.setItem(DEVICE_ID_KEY, id); } catch (_) { /* best effort */ }
+  return id;
+}
+
+// Hand the subscription to the server, tagged with this device's id so a
+// changed endpoint is recognised as the same device rather than a new one.
+async function sendSubscription(sub) {
+  const res = await fetch("/api/subscribe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(Object.assign({}, sub.toJSON(), { device_id: deviceId() })),
+  });
+  if (!res.ok) throw new Error("server rejected subscription");
+}
+
+// The registration returned by register() may still be installing, and WebKit
+// can report no subscription on one that is not active yet — which would show
+// the enable button to someone whose notifications are working fine. Wait for
+// an active worker, but do not hang on it forever if `ready` never settles.
+async function activeRegistration() {
+  const reg = await navigator.serviceWorker.register("/sw.js");
+  if (reg.active) return reg;
+  const ready = navigator.serviceWorker.ready;
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(reg), 5000));
+  return Promise.race([ready, timeout]);
+}
+
 async function init() {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
     setStatus("This browser does not support push notifications.", "err");
@@ -42,13 +85,30 @@ async function init() {
     return;
   }
 
-  const reg = await navigator.serviceWorker.register("/sw.js");
-  const existing = await reg.pushManager.getSubscription();
+  const reg = await activeRegistration();
+  let sub = await reg.pushManager.getSubscription();
 
-  if (Notification.permission === "granted" && existing) {
-    hideEnableChrome();
-    showRooms(existing.endpoint);
-    return;
+  if (Notification.permission === "granted") {
+    if (!sub) {
+      // Permission is still granted but the subscription is gone — the classic
+      // iOS revocation. No prompt is needed to replace it, though Safari may
+      // still insist on a user gesture; if it does, fall through to the button.
+      try {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlB64ToUint8Array(window.VAPID_PUBLIC_KEY),
+        });
+      } catch (_) { /* needs a tap: handled below */ }
+    }
+    if (sub) {
+      // Re-post on every launch, not just when subscribing. This is what
+      // repairs a device whose endpoint rotated, and revives one the push
+      // service reported gone. Best-effort: offline must not hide the rooms.
+      try { await sendSubscription(sub); } catch (_) { /* offline */ }
+      hideEnableChrome();
+      showRooms(sub.endpoint);
+      return;
+    }
   }
 
   if (Notification.permission === "denied") {
@@ -60,6 +120,10 @@ async function init() {
   if (isIOS && !isStandalone) {
     iosHint.hidden = false;
     setStatus("Add this app to your Home Screen first.", null);
+  } else if (Notification.permission === "granted") {
+    // Permission survived but the subscription did not, and re-creating it
+    // needs a tap. Rooms are intact server-side and come back with it.
+    setStatus("Notifications need re-connecting. Tap the button to restore them.", null);
   } else {
     setStatus("Tap the button to turn on notifications.", null);
   }
@@ -84,12 +148,7 @@ async function enable() {
       });
     }
 
-    const res = await fetch("/api/subscribe", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(sub),
-    });
-    if (!res.ok) throw new Error("server rejected subscription");
+    await sendSubscription(sub);
 
     hideEnableChrome();
     showRooms(sub.endpoint);

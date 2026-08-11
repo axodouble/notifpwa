@@ -91,12 +91,14 @@ func (s *store) deviceRooms(endpoint string) ([]deviceRoom, error) {
 
 // roomRecipients returns the push subscriptions in room whose secret_hash
 // exactly matches the given hash (use secretHash("") for the no-secret set).
+// Expired endpoints are excluded: their memberships are retained only so the
+// device can reclaim them, not to be pushed to.
 func (s *store) roomRecipients(room, secretHash string) ([]subscription, error) {
 	rows, err := s.db.Query(`
 		SELECT s.endpoint, s.p256dh, s.auth
 		FROM room_subscriptions rs
 		JOIN subscriptions s ON s.endpoint = rs.endpoint
-		WHERE rs.room = ? AND rs.secret_hash = ?`, room, secretHash)
+		WHERE rs.room = ? AND rs.secret_hash = ? AND s.expired_at = 0`, room, secretHash)
 	if err != nil {
 		return nil, err
 	}

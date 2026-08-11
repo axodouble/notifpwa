@@ -28,6 +28,34 @@ self.addEventListener("push", (event) => {
   event.waitUntil(self.registration.showNotification(title, options));
 });
 
+// The push service rotated or revoked our subscription. Re-subscribe and tell
+// the server, naming the endpoint being replaced so the device keeps its rooms
+// — the worker cannot read the page's device id from here.
+//
+// iOS does not implement this event (as of iOS 26), which is why the page also
+// re-posts its subscription on every launch. This keeps the other browsers
+// working without waiting for the user to open the app.
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil((async () => {
+    const old = event.oldSubscription;
+    let sub = event.newSubscription;
+    if (!sub) {
+      const key = old && old.options && old.options.applicationServerKey;
+      if (!key) return; // nothing to re-subscribe with
+      sub = await self.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: key,
+      });
+    }
+    await fetch("/api/subscribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        Object.assign({}, sub.toJSON(), { old_endpoint: old ? old.endpoint : "" })),
+    });
+  })());
+});
+
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const data = event.notification.data || {};

@@ -138,7 +138,10 @@ async function loadDevices() {
       row.style.marginTop = "10px";
       const name = d.label || d.user_agent || d.endpoint.slice(0, 40);
       const label = document.createElement("span");
-      label.textContent = name;
+      // Expired devices are kept, greyed out, so their rooms are waiting if the
+      // device re-subscribes; they receive nothing in the meantime.
+      label.textContent = d.expired_at ? name + " (expired)" : name;
+      if (d.expired_at) label.style.opacity = "0.55";
       const controls = document.createElement("span");
       const rename = document.createElement("button");
       rename.className = "secondary"; rename.textContent = "Rename"; rename.style.marginRight = "8px";

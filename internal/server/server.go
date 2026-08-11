@@ -55,6 +55,12 @@ func New(cfg Config) (*Server, error) {
 		st.close()
 		return nil, err
 	}
+	// Collect devices that expired long enough ago that they are not coming
+	// back, so held-open memberships cannot accumulate forever.
+	if err := st.purgeExpiredSubscriptions(time.Now().Add(-expiredSubscriptionTTL).Unix()); err != nil {
+		st.close()
+		return nil, err
+	}
 	return s, nil
 }
 
