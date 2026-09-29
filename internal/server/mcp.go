@@ -18,32 +18,34 @@ const mcpInstructions = "This server reaches the operator of this notifpwa insta
 	"Call notify_operator when your task is finished, and call it again when you are " +
 	"blocked and need the operator to decide something. The message arrives as a push " +
 	"notification on their phone. Keep body short and concrete: say what finished, or " +
-	"say exactly what you need."
+	"say exactly what you need. Notifications may be read by third parties: never send " +
+	"IP addresses, hostnames, secrets, tokens, or personal or private information " +
+	"through them."
 
-// notifyInput is the argument object of notify_operator. Only Body is required:
-// optionality comes from the omitempty in the json tag, which is what the SDK's
-// schema inference reads.
+// notifyInput is the argument object of notify_operator. Body and Title are
+// required; optionality comes from the omitempty in the json tag, which is what the
+// SDK's schema inference reads. Title has no server-side default on purpose: the
+// server embeds nothing in a notification, not even the caller's address (ADR-004).
 type notifyInput struct {
 	Body    string `json:"body" jsonschema:"What to tell the operator."`
-	Title   string `json:"title,omitempty" jsonschema:"Notification title. Defaults to who is calling."`
+	Title   string `json:"title" jsonschema:"Short title naming the task or result, e.g. the build that finished or the decision you need. Required. Never an IP address, hostname, secret, or piece of private information."`
 	URL     string `json:"url,omitempty" jsonschema:"Link the notification opens. Defaults to this app."`
 	Urgency string `json:"urgency,omitempty" jsonschema:"very-high, high, normal or low. Defaults to high."`
 	Secret  string `json:"secret,omitempty" jsonschema:"Room secret, if the room has one."`
 }
 
-// mcpRoom is what the request URL said: which room to post to, the secret baked
-// into the query string, and the address to name in the notification title.
+// mcpRoom is what the request URL said: which room to post to and the secret baked
+// into the query string. It deliberately carries no caller address — nothing that
+// identifies who called reaches the notification (ADR-004).
 type mcpRoom struct {
 	name   string
 	secret string
-	caller string
 }
 
 func roomFromRequest(r *http.Request) mcpRoom {
 	return mcpRoom{
 		name:   r.PathValue("room"),
 		secret: r.URL.Query().Get("secret"),
-		caller: clientIP(r),
 	}
 }
 
@@ -105,29 +107,36 @@ func (s *Server) mcpServer(room mcpRoom) *mcp.Server {
 		Name:  "notify_operator",
 		Title: "Notify the operator",
 		Description: "Send the operator a push notification. Use it when your task is " +
-			"finished, and again when you need their input.",
+			"finished, and again when you need their input. Provide a short, " +
+			"self-describing title. Notifications may be read by third parties: never " +
+			"include IP addresses, hostnames, secrets, tokens, or personal or private " +
+			"information.",
 		Annotations: &mcp.ToolAnnotations{
 			ReadOnlyHint:    false,
 			DestructiveHint: boolRef(false),
 			IdempotentHint:  false,
 			OpenWorldHint:   boolRef(true),
 		},
-	}, func(_ context.Context, req *mcp.CallToolRequest, in notifyInput) (*mcp.CallToolResult, any, error) {
-		return s.notifyRoom(room, req, in), nil, nil
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in notifyInput) (*mcp.CallToolResult, any, error) {
+		return s.notifyRoom(room, in), nil, nil
 	})
 	return srv
 }
 
 // notifyRoom delivers one agent message to the room and reports the outcome in
 // words an agent can act on.
-func (s *Server) notifyRoom(room mcpRoom, req *mcp.CallToolRequest, in notifyInput) *mcp.CallToolResult {
+func (s *Server) notifyRoom(room mcpRoom, in notifyInput) *mcp.CallToolResult {
 	secret := strings.TrimSpace(in.Secret)
 	if secret == "" {
 		secret = room.secret
 	}
+	// The schema requires the title field to be present, but a present-but-empty
+	// string passes it, so guard here too. The server supplies no default: a
+	// notification carries only what the agent chose to say (ADR-004).
 	title := strings.TrimSpace(in.Title)
 	if title == "" {
-		title = callerLabel(room.caller, req)
+		return toolError("title is required: say what the notification is about, e.g. " +
+			"what finished or what you need. Do not put an IP address or private data in it.")
 	}
 	link := strings.TrimSpace(in.URL)
 	if link == "" {
@@ -159,17 +168,6 @@ func (s *Server) notifyRoom(room mcpRoom, req *mcp.CallToolRequest, in notifyInp
 	return toolText(fmt.Sprintf(
 		"notified %d device(s) in %q (sent %d, failed %d, pruned %d).",
 		res.Recipients, room.name, res.Sent, res.Failed, res.Pruned))
-}
-
-// callerLabel names who sent the notification. Client identity only travels with
-// the 2026-07-28 protocol; clients still on 2025 revisions get the address alone.
-func callerLabel(caller string, req *mcp.CallToolRequest) string {
-	if meta, ok := req.Params.Meta.GetMeta()[mcp.MetaKeyClientInfo].(map[string]any); ok {
-		if name, ok := meta["name"].(string); ok && strings.TrimSpace(name) != "" {
-			return strings.TrimSpace(name) + " (" + caller + ")"
-		}
-	}
-	return caller
 }
 
 func toolText(text string) *mcp.CallToolResult {

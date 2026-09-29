@@ -21,11 +21,13 @@ notification" distinct from any other post.
 - The agent finds one tool whose purpose is stated as reaching the operator, and whose
   instructions say to use it when a task finishes **and** when it needs the operator's
   input. That framing is what makes the agent reach for it at the right moments.
-- The agent must supply the message. Everything else has a default the operator chose:
-  the title names the client that called plus the address it came from, the
-  notification opens the app, and it arrives marked urgent so it is not buried.
-  Each default can be overridden by the agent — the title, the link, and the urgency
-  are all arguments.
+- The agent must supply both the message and a title. The rest has a default the
+  operator chose: the notification opens the app and arrives marked urgent so it is
+  not buried, and the agent can override the link and the urgency. The title has no
+  default — the server embeds nothing, not even the caller's address.
+- A notification may be read by a third party. Agents are told, in the tool
+  description and the server instructions, never to send IP addresses, hostnames,
+  secrets, tokens, or personal or private information through a notification.
 - A notification reaching nobody is reported to the agent as a failure, with the reason
   ("no subscriber in this room matched — check the room name and the secret"), so the
   agent never tells the operator it notified them when it did not.
@@ -58,21 +60,22 @@ which is the same failure as making them pass a token.
 **Tradeoff:** One URL per room; an agent working across several rooms needs several
 connections.
 
-### 3. The title defaults to the caller's address, naming the client when it can
+### 3. The title is required; the server embeds nothing
 
-**Decision:** Default title is the address the request arrived from, e.g.
-`203.0.113.7`, prefixed with the client's own name when the request carries one —
-`opencode (203.0.113.7)`.
-**Why:** The room name would tell the operator nothing they did not already know; the
-useful question is *who is pinging me*. Client naming is opportunistic rather than
-guaranteed: the 2026-07-28 protocol carries the client's identity on every request, but
-the older protocol revision that Claude and ChatGPT speak carries it only during the
-handshake — and a stateless server has no handshake to look back on. Verified against
-the SDK: a 2025-06-18 `tools/call` arrives with no client identity attached.
-**Tradeoff:** Through ChatGPT or Claude's hosted connectors the title is that vendor's
-shared egress address and nothing more — it identifies the vendor, not the machine or
-the agent. Naming the client reliably would mean holding session state across requests,
-which is the thing stateless mode exists to avoid.
+**Decision:** `title` is a required argument. The server adds no default and embeds no
+caller-identifying data — the previous behaviour of defaulting the title to the
+caller's IP address (prefixed with the client name when the request carried one) was
+removed.
+**Why:** A notification can be read by a third party, so it must carry only what the
+agent chose to say (ADR-004). The IP-address default put a client address into a
+payload that crosses push providers and logs we do not own — the exact data we should
+never send. It also never told the operator much anyway: through ChatGPT or Claude's
+hosted connectors the address is the vendor's shared egress, identifying the vendor
+rather than the machine. Requiring a title makes the message self-describing instead of
+self-identifying, and moves "who is pinging me" into the words the agent chose.
+**Tradeoff:** Every agent call now carries a title, including a lazy "done" one; the
+operator loses the incidental signal of which address called. That signal was weak and
+came at the cost of leaking an IP, so it was not worth keeping.
 
 ### 4. The link defaults to the app root, not a URL assembled from the request
 
@@ -123,7 +126,8 @@ exactly the protected rooms where being wrong matters.
 
 - **ADRs:** [ADR-001](../adr/ADR-001-remote-mcp-over-browser-webmcp.md),
   [ADR-002](../adr/ADR-002-authless-mcp-endpoint.md),
-  [ADR-003](../adr/ADR-003-official-go-mcp-sdk.md)
+  [ADR-003](../adr/ADR-003-official-go-mcp-sdk.md),
+  [ADR-004](../adr/ADR-004-no-personal-data-in-agent-notifications.md)
 - **FDRs:** none
 
 ## Open Questions

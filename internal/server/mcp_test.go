@@ -96,6 +96,9 @@ func TestMCPHandshakeAndToolsList(t *testing.T) {
 	if i := strings.Index(instr, "notify_operator"); i < 0 || i > 512 {
 		t.Fatalf("notify_operator mentioned at offset %d, want within the first 512 chars", i)
 	}
+	if !strings.Contains(strings.ToLower(instr), "third part") {
+		t.Fatalf("server instructions missing the third-party warning: %q", instr)
+	}
 	caps, _ := result["capabilities"].(map[string]any)
 	if _, ok := caps["tools"]; !ok {
 		t.Fatalf("capabilities missing tools: %v", caps)
@@ -124,15 +127,30 @@ func TestMCPHandshakeAndToolsList(t *testing.T) {
 		t.Fatalf("tool name = %v, want notify_operator", tool["name"])
 	}
 	schema, _ := tool["inputSchema"].(map[string]any)
-	req, _ := schema["required"].([]any)
-	if len(req) != 1 || req[0] != "body" {
-		t.Fatalf("required = %v, want exactly [body]", req)
+	reqList, _ := schema["required"].([]any)
+	required := map[string]bool{}
+	for _, r := range reqList {
+		required[r.(string)] = true
+	}
+	if !required["body"] || !required["title"] {
+		t.Fatalf("required = %v, want body and title both required", reqList)
+	}
+	for _, optional := range []string{"url", "urgency", "secret"} {
+		if required[optional] {
+			t.Fatalf("%q should be optional, but is in required = %v", optional, reqList)
+		}
 	}
 	props, _ := schema["properties"].(map[string]any)
 	for _, want := range []string{"body", "title", "url", "urgency", "secret"} {
 		if _, ok := props[want]; !ok {
 			t.Fatalf("inputSchema.properties missing %q in %v", want, props)
 		}
+	}
+	// The description must warn that a notification may be read by a third party,
+	// so an agent does not send private data thinking it reaches only the operator.
+	desc, _ := tool["description"].(string)
+	if !strings.Contains(strings.ToLower(desc), "third part") || !strings.Contains(strings.ToLower(desc), "private") {
+		t.Fatalf("tool description missing the third-party/private-data warning: %q", desc)
 	}
 }
 
@@ -225,7 +243,7 @@ func stubPush(t *testing.T) *[]pushPayload {
 	return &sent
 }
 
-func TestMCPNotifyDeliversWithOperatorDefaults(t *testing.T) {
+func TestMCPNotifyDeliversWithAgentTitleAndDefaults(t *testing.T) {
 	s := newTestApp(t)
 	s.store.upsertSubscription(mkSub("https://push/mcp1"), "")
 	if err := s.store.joinRoom("alerts", "https://push/mcp1", nil); err != nil {
@@ -233,7 +251,9 @@ func TestMCPNotifyDeliversWithOperatorDefaults(t *testing.T) {
 	}
 	sent := stubPush(t)
 
-	result := callNotify(t, s, "/mcp/alerts", map[string]any{"body": "build failed"})
+	result := callNotify(t, s, "/mcp/alerts", map[string]any{
+		"body": "build failed", "title": "Nightly build",
+	})
 	if isError, ok := result["isError"].(bool); ok && isError {
 		t.Fatalf("tool reported an error: %s", firstText(t, result))
 	}
@@ -241,10 +261,10 @@ func TestMCPNotifyDeliversWithOperatorDefaults(t *testing.T) {
 		t.Fatalf("got %d sends, want 1", len(*sent))
 	}
 	p := (*sent)[0]
-	// Title defaults to naming the caller: httptest sets RemoteAddr, which
-	// clientIP reduces to the bare host.
-	if p.Title == "" || p.Title == "alerts" {
-		t.Fatalf("title = %q, want the caller named rather than the room", p.Title)
+	// The title is exactly what the agent supplied — the server appends nothing,
+	// not even the caller's address (ADR-004).
+	if p.Title != "Nightly build" {
+		t.Fatalf("title = %q, want the agent's title verbatim", p.Title)
 	}
 	// The link is the app itself, never a URL assembled from request headers.
 	if p.URL != "/" {
@@ -265,6 +285,69 @@ func TestMCPNotifyDeliversWithOperatorDefaults(t *testing.T) {
 	text := firstText(t, result)
 	if !strings.Contains(text, "1") || !strings.Contains(text, "alerts") {
 		t.Fatalf("result text %q does not report one device in alerts", text)
+	}
+}
+
+// A notification carries no caller address, so it cannot leak an IP to a third
+// party (ADR-004). Even a 2026-07-28 request that carries the client's own identity
+// and a source address must not have either appended to the title.
+func TestMCPNotifyEmbedsNoCallerAddress(t *testing.T) {
+	s := newTestApp(t)
+	s.store.upsertSubscription(mkSub("https://push/mcp4"), "")
+	s.store.joinRoom("alerts", "https://push/mcp4", nil)
+	sent := stubPush(t)
+
+	if code, res := mcpRPC(t, s, "/mcp/alerts", "", initializeMsg()); code != 200 {
+		t.Fatalf("initialize: %d %v", code, res)
+	}
+	code, res := mcpRPCHeaders(t, s, "/mcp/alerts", "2026-07-28", map[string]any{
+		"jsonrpc": "2.0", "id": float64(2), "method": "tools/call",
+		"params": map[string]any{
+			"name": "notify_operator",
+			"_meta": map[string]any{"io.modelcontextprotocol/protocolVersion": "2026-07-28",
+				"io.modelcontextprotocol/clientCapabilities": map[string]any{},
+				"io.modelcontextprotocol/clientInfo": map[string]any{
+					"name": "testclient", "version": "0"}},
+			"arguments": map[string]any{"body": "hi", "title": "Nightly build"},
+		},
+	}, map[string]string{"Mcp-Method": "tools/call", "Mcp-Name": "notify_operator"})
+	if code != 200 {
+		t.Fatalf("tools/call status = %d, want 200 (body %v)", code, res)
+	}
+	if err, ok := res["error"]; ok && err != nil {
+		t.Fatalf("2026-07-28 call failed: %v", err)
+	}
+	if *sent == nil || len(*sent) != 1 {
+		t.Fatalf("got %v sends, want 1", sent)
+	}
+	if got := (*sent)[0].Title; got != "Nightly build" {
+		t.Fatalf("title = %q, want it verbatim with no client name or address appended", got)
+	}
+}
+
+// The title is required. Omitting it fails the schema, and a present-but-empty
+// title is refused by the handler; either way the agent gets an actionable error
+// rather than a notification that silently carries no title.
+func TestMCPNotifyTitleIsRequired(t *testing.T) {
+	s := newTestApp(t)
+	s.store.upsertSubscription(mkSub("https://push/mcp5"), "")
+	s.store.joinRoom("alerts", "https://push/mcp5", nil)
+	sent := stubPush(t)
+
+	for name, args := range map[string]map[string]any{
+		"missing": {"body": "no title given"},
+		"empty":   {"body": "empty title", "title": "   "},
+	} {
+		res := callNotify(t, s, "/mcp/alerts", args)
+		if isError, _ := res["isError"].(bool); !isError {
+			t.Fatalf("%s title reported success: %v", name, res)
+		}
+		if !strings.Contains(strings.ToLower(firstText(t, res)), "title") {
+			t.Fatalf("%s title error should name the title: %q", name, firstText(t, res))
+		}
+	}
+	if *sent != nil {
+		t.Fatalf("nothing should have been sent without a title, got %d", len(*sent))
 	}
 }
 
@@ -297,19 +380,19 @@ func TestMCPSecretFromURLAndArgument(t *testing.T) {
 	sent := stubPush(t)
 
 	// The URL alone carries the capability: no secret argument needed.
-	callNotify(t, s, "/mcp/alerts?secret=hunter2", map[string]any{"body": "via url"})
+	callNotify(t, s, "/mcp/alerts?secret=hunter2", map[string]any{"body": "via url", "title": "T"})
 	if len(*sent) != 1 {
 		t.Fatalf("secret in URL reached %d devices, want 1", len(*sent))
 	}
 
 	// No secret anywhere reaches nobody, and says so as an error.
-	res := callNotify(t, s, "/mcp/alerts", map[string]any{"body": "no secret"})
+	res := callNotify(t, s, "/mcp/alerts", map[string]any{"body": "no secret", "title": "T"})
 	if isError, _ := res["isError"].(bool); !isError {
 		t.Fatalf("secretless post to a guarded room should be an error: %v", res)
 	}
 
 	// An explicit argument wins over a URL secret.
-	callNotify(t, s, "/mcp/alerts?secret=wrong", map[string]any{"body": "via arg", "secret": "hunter2"})
+	callNotify(t, s, "/mcp/alerts?secret=wrong", map[string]any{"body": "via arg", "title": "T", "secret": "hunter2"})
 	if len(*sent) != 2 {
 		t.Fatalf("secret argument override reached %d devices total, want 2", len(*sent))
 	}
@@ -321,7 +404,7 @@ func TestMCPNotifyReachesNobodyAndSaysSo(t *testing.T) {
 
 	// Room "ghost" has no subscribers. broadcastRoom returns success with zero
 	// recipients; the tool must not let an agent read that as a notification sent.
-	result := callNotify(t, s, "/mcp/ghost", map[string]any{"body": "anyone there?"})
+	result := callNotify(t, s, "/mcp/ghost", map[string]any{"body": "anyone there?", "title": "T"})
 	isError, _ := result["isError"].(bool)
 	if !isError {
 		t.Fatalf("zero-recipient post reported as success: %v", result)
@@ -335,39 +418,5 @@ func TestMCPNotifyReachesNobodyAndSaysSo(t *testing.T) {
 	}
 	if *sent != nil {
 		t.Fatalf("nothing should have been sent, got %d", len(*sent))
-	}
-}
-
-func TestMCPCallerLabelNamesClientWhenPresent(t *testing.T) {
-	s := newTestApp(t)
-	s.store.upsertSubscription(mkSub("https://push/mcp4"), "")
-	s.store.joinRoom("alerts", "https://push/mcp4", nil)
-	sent := stubPush(t)
-
-	// 2026-07-28-era clients carry their identity on every request; older ones
-	// (Claude, ChatGPT) do not, and are labelled by address alone. That revision
-	// also moves the method name into a header, so the request says so twice.
-	if code, res := mcpRPC(t, s, "/mcp/alerts", "", initializeMsg()); code != 200 {
-		t.Fatalf("initialize: %d %v", code, res)
-	}
-	code, res := mcpRPCHeaders(t, s, "/mcp/alerts", "2026-07-28", map[string]any{
-		"jsonrpc": "2.0", "id": float64(2), "method": "tools/call",
-		"params": map[string]any{
-			"name": "notify_operator",
-			"_meta": map[string]any{"io.modelcontextprotocol/protocolVersion": "2026-07-28",
-				"io.modelcontextprotocol/clientCapabilities": map[string]any{},
-				"io.modelcontextprotocol/clientInfo": map[string]any{
-					"name": "testclient", "version": "0"}},
-			"arguments": map[string]any{"body": "hi"},
-		},
-	}, map[string]string{"Mcp-Method": "tools/call", "Mcp-Name": "notify_operator"})
-	if code != 200 {
-		t.Fatalf("tools/call status = %d, want 200 (body %v)", code, res)
-	}
-	if err, ok := res["error"]; ok && err != nil {
-		t.Fatalf("2026-07-28 call failed: %v", err)
-	}
-	if *sent == nil || !strings.Contains((*sent)[0].Title, "testclient") {
-		t.Fatalf("title = %q, want the client name when the request carries it", (*sent)[0].Title)
 	}
 }

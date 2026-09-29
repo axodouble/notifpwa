@@ -54,11 +54,12 @@ at a room URL — that URL is the whole configuration:
 https://notify.example.com/mcp/alerts
 ```
 
-The agent gets one tool, `notify_operator`. Everything but the message has a default:
-the title names whoever called, the notification opens this app, and it arrives marked
-urgent. The agent can override the title, the link and the urgency, and can pass a room
-secret as an argument — or bake it into the URL as `?secret=...` so the URL alone is
-enough.
+The agent gets one tool, `notify_operator`. It must supply the message and a short
+title (what finished, or what it needs from you); the notification opens this app and
+arrives marked urgent unless the agent overrides the link or the urgency. It can pass a
+room secret as an argument — or bake it into the URL as `?secret=...` so the URL alone
+is enough. The server deliberately adds nothing to a notification, not even the
+caller's address.
 
 With Claude Code:
 
@@ -97,14 +98,16 @@ If that matters to you, set a secret on the room and hand out
 `/mcp/alerts?secret=...` instead — and remember a secret in a URL lands in your proxy's
 access log, so share the link accordingly.
 
-Two client-side realities worth knowing:
+Three realities worth knowing:
 
 - ChatGPT and Claude's hosted connectors call you **from their own infrastructure**, so
-  the app must be publicly reachable over HTTPS (you already need that for iOS), and the
-  address in the notification title is theirs, not the agent's machine. A CLI on your own
-  laptop — Claude Code, OpenCode — gets that address back, which is the useful case: the
-  title tells you which machine is asking. Behind a proxy, put the real client in
-  `X-Forwarded-For` or every title shows the proxy.
+  the app must be publicly reachable over HTTPS (you already need that for iOS).
+- **A notification may be read by a third party.** It leaves your server through a push
+  provider you do not control, and room URLs and `?secret=` cross proxy logs. The agent
+  is told never to send IP addresses, hostnames, secrets, tokens, or personal or private
+  information in a title or body, and the server itself embeds none — not even the
+  caller's address. Still, treat any notification as text you would be comfortable
+  reading on a billboard.
 - ChatGPT accepts an unauthenticated server but will not accept a static API key — an
   authenticated one would have to implement full OAuth 2.1. Claude, Claude Code and
   OpenCode take either. Leaving this endpoint unauthenticated is what makes one URL work
