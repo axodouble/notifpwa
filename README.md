@@ -44,6 +44,45 @@ curl -X POST "https://notify.example.com/n/alerts?secret=my-secret" \
   -d '{"title":"Alert","body":"CPU high","url":"/","urgency":"high"}'
 ```
 
+## Agents (MCP)
+
+Coding agents and assistants that speak [MCP](https://modelcontextprotocol.io) can
+buzz you when they finish, or when they need you to decide something. Point the agent
+at a room URL — that URL is the whole configuration:
+
+```
+https://notify.example.com/mcp/alerts
+```
+
+The agent gets one tool, `notify_operator`. Everything but the message has a default:
+the title names whoever called, the notification opens this app, and it arrives marked
+urgent. The agent can override the title, the link and the urgency, and can pass a room
+secret as an argument — or bake it into the URL as `?secret=...` so the URL alone is
+enough.
+
+With Claude Code:
+
+```sh
+claude mcp add --transport http notifpwa https://notify.example.com/mcp/alerts
+```
+
+**Treat the room URL as a capability.** This endpoint has no login and no API key, the
+same as posting to a room with `curl` (see [Rooms](#rooms-topics)): anyone who knows
+`/mcp/alerts` can raise a notification on devices in `alerts` that have no secret set.
+If that matters to you, set a secret on the room and hand out
+`/mcp/alerts?secret=...` instead — and remember a secret in a URL lands in your proxy's
+access log, so share the link accordingly.
+
+Two client-side realities worth knowing:
+
+- ChatGPT and Claude's hosted connectors call you **from their own infrastructure**, so
+  the app must be publicly reachable over HTTPS (you already need that for iOS), and the
+  address in the notification title is theirs, not the agent's machine.
+- ChatGPT accepts an unauthenticated server but will not accept a static API key — an
+  authenticated one would have to implement full OAuth 2.1. Claude and Claude Code take
+  either. Leaving this endpoint unauthenticated is what makes one URL work for all of
+  them.
+
 ## Run it
 
 ```sh
@@ -147,6 +186,7 @@ Any equivalent (nginx + certbot, Cloudflare Tunnel, etc.) works too.
 | `POST /api/config` | `admin` | multipart (`name`, `icon`) | Update app name / icon. |
 | `POST /api/subscribe` | none | PushSubscription JSON + `device_id`, or `old_endpoint` | Register a device (called by the page on every launch). `device_id` is a stable client id: when a push endpoint rotates, the device's rooms move to the new endpoint instead of being lost. `old_endpoint` does the same for the service worker, which cannot read `device_id`. |
 | `POST /n/{room}` | secret* | plaintext, or `{"title","body",…}` (JSON) | Post to a room. Secret via `X-Room-Secret` header or `?secret=`. Delivered to room devices whose secret matches. Returns `{"sent","failed","pruned","recipients"}`. Rate-limited. |
+| `POST /mcp/{room}` | none | — | [MCP](https://modelcontextprotocol.io) endpoint for the room: one tool, `notify_operator`, which posts to the room. Secret via `?secret=` or the tool's `secret` argument. See [Agents (MCP)](#agents-mcp). |
 | `GET /api/rooms` | none | `?endpoint=` | List the rooms a device belongs to (`[{"room","has_secret"}]`). |
 | `POST /api/rooms` | none | `{"endpoint","room","secret"?}` | Join a room / set-or-clear its secret. `secret:""` clears; omit to leave unchanged. |
 | `DELETE /api/rooms` | none | `{"endpoint","room"}` | Leave a room. |
@@ -170,6 +210,7 @@ internal/server/     # the application package
   handlers.go        #   HTTP routes and handlers
   push.go            #   push delivery to a subscription list + expire dead endpoints
   rooms.go           #   rooms: schema, membership, room broadcast + handlers
+  mcp.go             #   the MCP endpoint: room-scoped server and the notify_operator tool
   web/               #   embedded PWA frontend (html/js/service worker/icon)
 ```
 

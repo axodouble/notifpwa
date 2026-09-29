@@ -6,6 +6,8 @@ import (
 	"crypto/rand"
 	"embed"
 	"encoding/hex"
+	"net/http"
+	"sync"
 	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
@@ -34,6 +36,8 @@ type Server struct {
 	limiter      *rateLimiter
 	postLimiter  *rateLimiter
 	sessions     *sessionStore
+	mcpOnce      sync.Once    // guards the lazy build of mcpHandler below
+	mcpHandler   http.Handler // built on first request: tests construct Server without New()
 }
 
 // New opens (or creates) the database and loads/generates the VAPID keypair,

@@ -23,6 +23,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /favicon.ico", s.handleIcon)
 	mux.HandleFunc("POST /api/subscribe", s.rateLimit(s.handleSubscribe))
 	mux.HandleFunc("POST /n/{room}", s.rateLimitPost(s.handleRoomPost))
+	// The MCP endpoint shares the public post bucket rather than adding a
+	// second policy: like POST /n/{room}, it is unauthenticated.
+	mux.HandleFunc("POST /mcp/{room}", s.rateLimitPost(s.serveMCP))
 	mux.HandleFunc("GET /api/rooms", s.rateLimitPost(s.handleListRooms))
 	mux.HandleFunc("POST /api/rooms", s.rateLimitPost(s.handleJoinRoom))
 	mux.HandleFunc("DELETE /api/rooms", s.rateLimitPost(s.handleLeaveRoom))
