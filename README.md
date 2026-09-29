@@ -66,6 +66,30 @@ With Claude Code:
 claude mcp add --transport http notifpwa https://notify.example.com/mcp/alerts
 ```
 
+With [OpenCode](https://opencode.ai/docs/mcp-servers/), add it under `mcp` in the global
+config — `~/.config/opencode/opencode.json` — because this notifies *you*, not the
+project you happen to be sitting in:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "notifpwa": {
+      "type": "remote",
+      "url": "https://notify.example.com/mcp/alerts",
+      "enabled": true
+    }
+  }
+}
+```
+
+No `headers` and no `oauth`: there is no credential to pass. OpenCode only starts an
+OAuth flow when a server answers with a `401`, which this endpoint never does; add
+`"oauth": false` if you would rather it did not probe. Tools are namespaced by the name
+you gave the server, so `notifpwa` here is what to say in a prompt — *"when you're done,
+notify me"* — and `"tools": { "notifpwa_*": false }` is how you turn it off without
+deleting the entry.
+
 **Treat the room URL as a capability.** This endpoint has no login and no API key, the
 same as posting to a room with `curl` (see [Rooms](#rooms-topics)): anyone who knows
 `/mcp/alerts` can raise a notification on devices in `alerts` that have no secret set.
@@ -77,11 +101,14 @@ Two client-side realities worth knowing:
 
 - ChatGPT and Claude's hosted connectors call you **from their own infrastructure**, so
   the app must be publicly reachable over HTTPS (you already need that for iOS), and the
-  address in the notification title is theirs, not the agent's machine.
+  address in the notification title is theirs, not the agent's machine. A CLI on your own
+  laptop — Claude Code, OpenCode — gets that address back, which is the useful case: the
+  title tells you which machine is asking. Behind a proxy, put the real client in
+  `X-Forwarded-For` or every title shows the proxy.
 - ChatGPT accepts an unauthenticated server but will not accept a static API key — an
-  authenticated one would have to implement full OAuth 2.1. Claude and Claude Code take
-  either. Leaving this endpoint unauthenticated is what makes one URL work for all of
-  them.
+  authenticated one would have to implement full OAuth 2.1. Claude, Claude Code and
+  OpenCode take either. Leaving this endpoint unauthenticated is what makes one URL work
+  for all of them.
 
 ## Run it
 
