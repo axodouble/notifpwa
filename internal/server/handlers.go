@@ -22,14 +22,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /icon.png", s.handleIcon)
 	mux.HandleFunc("GET /favicon.ico", s.handleIcon)
 	mux.HandleFunc("POST /api/subscribe", s.rateLimit(s.handleSubscribe))
-	mux.HandleFunc("POST /n/{room}", s.rateLimitPost(s.handleRoomPost))
-	// The MCP endpoint shares the public post bucket rather than adding a
-	// second policy: like POST /n/{room}, it is unauthenticated.
-	mux.HandleFunc("POST /mcp/{room}", s.rateLimitPost(s.serveMCP))
-	mux.HandleFunc("GET /api/rooms", s.rateLimitPost(s.handleListRooms))
-	mux.HandleFunc("POST /api/rooms", s.rateLimitPost(s.handleJoinRoom))
-	mux.HandleFunc("DELETE /api/rooms", s.rateLimitPost(s.handleLeaveRoom))
-	mux.HandleFunc("GET /api/rooms/log", s.rateLimitPost(s.handleDeviceRoomLog))
+	// Only sends are rate limited: a notification costs a push to real devices,
+	// and POST /n/{room} plus the MCP notify tool are the two ways to make one.
+	mux.HandleFunc("POST /n/{room}", s.rateLimitSend(s.handleRoomPost))
+	// The MCP transport is not limited at the HTTP layer. Clients re-list tools on
+	// every turn, so limiting here rejected handshakes and made clients drop the
+	// tool mid-session; the notify tool limits the send itself. See serveMCP.
+	mux.HandleFunc("POST /mcp/{room}", s.serveMCP)
+	// Room membership and history cost the server two indexed reads or a keyed
+	// row write, so they ride without a limiter rather than sharing the send one.
+	mux.HandleFunc("GET /api/rooms", s.handleListRooms)
+	mux.HandleFunc("POST /api/rooms", s.handleJoinRoom)
+	mux.HandleFunc("DELETE /api/rooms", s.handleLeaveRoom)
+	mux.HandleFunc("GET /api/rooms/log", s.handleDeviceRoomLog)
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 
 	// Token-protected surface. admin.js is static; its calls rely on the

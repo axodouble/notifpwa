@@ -420,3 +420,49 @@ func TestMCPNotifyReachesNobodyAndSaysSo(t *testing.T) {
 		t.Fatalf("nothing should have been sent, got %d", len(*sent))
 	}
 }
+
+// The send is the only thing limited, and the client is told so in the tool
+// result rather than at the transport: a client that cannot interpret a 429 on
+// tools/list drops the tool entirely, which changes the prompt it sends and
+// costs it its cache. The handshake and tools/list keep answering while the
+// send bucket is empty.
+func TestMCPRateLimitsTheSendNotTheTransport(t *testing.T) {
+	s := newTestApp(t)
+	s.store.upsertSubscription(mkSub("https://push/mcp6"), "")
+	if err := s.store.joinRoom("alerts", "https://push/mcp6", nil); err != nil {
+		t.Fatalf("joinRoom: %v", err)
+	}
+	sent := stubPush(t)
+	s.sendLimiter = newRateLimiter(1, 0)
+
+	res := callNotify(t, s, "/mcp/alerts", map[string]any{"body": "first", "title": "T"})
+	if isError, _ := res["isError"].(bool); isError {
+		t.Fatalf("first send should pass the burst: %s", firstText(t, res))
+	}
+
+	res = callNotify(t, s, "/mcp/alerts", map[string]any{"body": "second", "title": "T"})
+	if isError, _ := res["isError"].(bool); !isError {
+		t.Fatalf("second send should be limited: %v", res)
+	}
+	text := firstText(t, res)
+	if !strings.Contains(text, "rate limited") || !strings.Contains(text, "wait") {
+		t.Fatalf("error text %q should say rate limited and to wait", text)
+	}
+	if len(*sent) != 1 {
+		t.Fatalf("got %d sends, want the one allowed by the bucket", len(*sent))
+	}
+
+	// With the bucket still empty, the transport answers as if nothing happened.
+	if code, r := mcpRPC(t, s, "/mcp/alerts", "", initializeMsg()); code != 200 {
+		t.Fatalf("initialize while send-limited: status %d, %v", code, r)
+	}
+	code, r := mcpRPC(t, s, "/mcp/alerts", "2025-06-18", map[string]any{
+		"jsonrpc": "2.0", "id": float64(3), "method": "tools/list", "params": map[string]any{},
+	})
+	if code != 200 {
+		t.Fatalf("tools/list while send-limited: status %d, %v", code, r)
+	}
+	if list, _ := resultOf(t, r)["tools"].([]any); len(list) != 1 {
+		t.Fatalf("got %d tools while send-limited, want 1", len(list))
+	}
+}

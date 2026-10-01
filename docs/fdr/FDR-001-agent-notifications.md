@@ -2,7 +2,7 @@
 
 **Status:** Active
 **Author:** jasper
-**Last reviewed:** 2026-09-29 — jasper
+**Last reviewed:** 2026-10-01 — jasper
 
 ## Overview
 
@@ -31,6 +31,9 @@ notification" distinct from any other post.
 - A notification reaching nobody is reported to the agent as a failure, with the reason
   ("no subscriber in this room matched — check the room name and the secret"), so the
   agent never tells the operator it notified them when it did not.
+- Run too fast, and the agent is told so in the tool result — "rate limited, wait a few
+  seconds and notify again" — and the notification is not sent. Connecting, and reading
+  what the server can do, is never refused for being frequent.
 - Agents that deliver to a secret-protected room can pass the secret as an argument; if
   the operator baked it into the URL, the argument is not needed. An explicit argument
   overrides the URL.
@@ -122,12 +125,27 @@ Any URL the UI printed would be the unguarded one, which under-delivers silently
 exactly the protected rooms where being wrong matters.
 **Tradeoff:** Discovery depends on the README, and the operator types the URL once.
 
+### 9. A limit stops the notification, never the conversation
+
+**Decision:** The send rate is checked where the notification is produced, and reported
+to the agent as a tool result naming the limit. The handshake and the tool listing carry
+no limit at all.
+**Why:** Clients re-list tools on every turn and treat a failed listing as a dead server,
+which drops the tool and the server's instructions out of the head of their prompt and
+costs them their provider-side cache for the whole conversation (ADR-005). An agent that
+is limited wants a sentence it can act on, not a transport error it reads as "this server
+is gone".
+**Tradeoff:** Everything on the endpoint except the notification is unthrottled, so an
+attacker can make the server answer JSON for as long as it likes. That work reaches no
+database and no push provider, so it costs bandwidth rather than money.
+
 ## Related
 
 - **ADRs:** [ADR-001](../adr/ADR-001-remote-mcp-over-browser-webmcp.md),
   [ADR-002](../adr/ADR-002-authless-mcp-endpoint.md),
   [ADR-003](../adr/ADR-003-official-go-mcp-sdk.md),
-  [ADR-004](../adr/ADR-004-no-personal-data-in-agent-notifications.md)
+  [ADR-004](../adr/ADR-004-no-personal-data-in-agent-notifications.md),
+  [ADR-005](../adr/ADR-005-rate-limit-the-send-not-the-mcp-transport.md)
 - **FDRs:** none
 
 ## Open Questions
@@ -138,6 +156,7 @@ exactly the protected rooms where being wrong matters.
   (ADR-002).
 - Agents cannot list rooms. An agent-visible list would leak room names to anyone who
   reaches the endpoint.
-- The endpoint shares the public post bucket. Because hosted clients connect from shared
-  egress IPs, a stranger's traffic can produce a 429 for the operator; a bucket of its
-  own is the obvious fix if it turns out to matter in practice.
+- The send bucket is per IP, and hosted clients connect from shared egress IPs, so a
+  stranger's traffic can still starve the operator's own sends. ADR-005 took the limiter
+  off the transport, which narrows the damage to sends only; a per-room or per-token
+  bucket is the real fix if starvation shows up in practice.

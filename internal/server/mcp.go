@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -52,6 +53,12 @@ func roomFromRequest(r *http.Request) mcpRoom {
 // serveMCP is the MCP endpoint for the room in the path. It is unauthenticated
 // by design: posting to a room is unauthenticated already, and the room plus its
 // secret is the capability. See docs/adr/ADR-002.
+//
+// It is deliberately not rate limited at the HTTP layer. The transport costs the
+// server nothing until a notification is actually sent, and clients such as
+// OpenCode re-list tools on every turn (this server answers with ttlMs 0), so a
+// limiter here rejected harmless handshakes and made those clients drop the tool
+// mid-session. The limit belongs to the send, and is applied in the tool handler.
 func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 	if !validRoomName(r.PathValue("room")) {
 		http.Error(w, "invalid room name", http.StatusBadRequest)
@@ -69,7 +76,9 @@ func (s *Server) serveMCP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) mcpHandlerFor() http.Handler {
 	s.mcpOnce.Do(func() {
 		s.mcpHandler = mcp.NewStreamableHTTPHandler(
-			func(r *http.Request) *mcp.Server { return s.mcpServer(roomFromRequest(r)) },
+			func(r *http.Request) *mcp.Server {
+				return s.mcpServer(roomFromRequest(r), clientIP(r))
+			},
 			&mcp.StreamableHTTPOptions{
 				Stateless:    true, // no Mcp-Session-Id; GET and DELETE answer 405
 				JSONResponse: true, // application/json rather than text/event-stream
@@ -97,8 +106,9 @@ func originAllowed(r *http.Request) bool {
 
 // mcpServer is the room-scoped view an agent sees. A fresh one is built per
 // request so the tool closes over the room and secret from the URL rather than
-// from process-wide state.
-func (s *Server) mcpServer(room mcpRoom) *mcp.Server {
+// from process-wide state. callerIP is the send-limiter key and nothing else:
+// it reaches no notification, log row, or tool result (ADR-004).
+func (s *Server) mcpServer(room mcpRoom, callerIP string) *mcp.Server {
 	srv := mcp.NewServer(
 		&mcp.Implementation{Name: "notifpwa", Version: s.appVersion()},
 		&mcp.ServerOptions{Instructions: mcpInstructions},
@@ -118,6 +128,14 @@ func (s *Server) mcpServer(room mcpRoom) *mcp.Server {
 			OpenWorldHint:   boolRef(true),
 		},
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in notifyInput) (*mcp.CallToolResult, any, error) {
+		// The only limit on this endpoint, and it sits here because this is the
+		// one thing it does that costs anything: a push to real devices. Answered
+		// as a tool error rather than an HTTP status so the agent reads why and
+		// backs off, instead of a transport failure it cannot interpret.
+		if !s.sendLimiter.allow(callerIP, time.Now()) {
+			return toolError("send rate limited: wait a few seconds and notify again. " +
+				"Do not retry in a loop."), nil, nil
+		}
 		return s.notifyRoom(room, in), nil, nil
 	})
 	return srv

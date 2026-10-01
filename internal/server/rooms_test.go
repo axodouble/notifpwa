@@ -355,7 +355,7 @@ func TestRoomPostValidationAndRateLimit(t *testing.T) {
 	}
 
 	// Rate limit: force a burst-1 limiter, second request is 429.
-	s.postLimiter = newRateLimiter(1, 0)
+	s.sendLimiter = newRateLimiter(1, 0)
 	req = httptest.NewRequest("POST", "/n/ok", strings.NewReader("a"))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)

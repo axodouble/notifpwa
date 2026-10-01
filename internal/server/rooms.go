@@ -275,10 +275,14 @@ func roomSecret(r *http.Request) string {
 	return r.URL.Query().Get("secret")
 }
 
-// rateLimitPost gates public posting routes by per-IP token bucket.
-func (s *Server) rateLimitPost(next http.HandlerFunc) http.HandlerFunc {
+// rateLimitSend gates public sends by per-IP token bucket. This is the one
+// limiter a notification passes: pushing to real devices is the only thing the
+// public surface does that costs anything. The MCP notify tool consults the same
+// bucket in its handler rather than here, because the transport that carries it
+// is not a send.
+func (s *Server) rateLimitSend(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.postLimiter.allow(clientIP(r), time.Now()) {
+		if !s.sendLimiter.allow(clientIP(r), time.Now()) {
 			http.Error(w, "rate limited", http.StatusTooManyRequests)
 			return
 		}

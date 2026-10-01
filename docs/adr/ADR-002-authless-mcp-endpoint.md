@@ -30,8 +30,11 @@ secret; full OAuth 2.1; or nothing.
 
 **Nothing.** `POST /mcp/{room}` accepts no credential of any kind. The room name in
 the path, and optionally its secret supplied as `?secret=` on the URL or as the
-`secret` tool argument, *is* the capability. This mirrors `/n/{room}` exactly, and
-reuses its per-IP post limiter unchanged.
+`secret` tool argument, *is* the capability. This mirrors `/n/{room}` exactly.
+
+It originally reused `/n/{room}`'s per-IP limiter unchanged. That half of the decision
+was reversed by [ADR-005](ADR-005-rate-limit-the-send-not-the-mcp-transport.md): the
+notification a call may produce is still limited by that bucket, the transport is not.
 
 ## Consequences
 
@@ -46,10 +49,11 @@ reuses its per-IP post limiter unchanged.
   no secret set. That is already true of `https://host/n/alerts`, so the exposure is
   not new — but it is newly *discoverable* by agents, which is why the README tells
   operators to set a room secret and to treat the URL as a secret.
-- No new rate limiting means Claude and ChatGPT call from **shared egress IPs**, so
-  the existing per-IP bucket is shared with strangers. A 429 here is possible with
-  no misbehaviour by the operator. Mitigating this means a bucket of its own, which
-  is deferred as an open question rather than silently assumed.
+- Claude and ChatGPT call from **shared egress IPs**, so the per-IP send bucket is shared
+   with strangers and an operator's own sends can be starved by agents they never ran.
+   A bucket of its own was deferred there as an open question; ADR-005 later took the
+   limiter off the transport for a different reason, and the shared bucket for the send
+   itself is still open.
 - Reaching a secret-protected room requires knowing the secret. Secrets are stored
   hashed only, so the server cannot hand the operator a pre-built URL — they compose
   it themselves, from a secret they already know.

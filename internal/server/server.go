@@ -34,7 +34,7 @@ type Server struct {
 	subscriber   string
 	version      string
 	limiter      *rateLimiter
-	postLimiter  *rateLimiter
+	sendLimiter  *rateLimiter
 	sessions     *sessionStore
 	mcpOnce      sync.Once    // guards the lazy build of mcpHandler below
 	mcpHandler   http.Handler // built on first request: tests construct Server without New()
@@ -53,7 +53,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	s := &Server{store: st, subscriber: cfg.Subscriber, rootToken: cfg.Token, version: version}
 	s.limiter = newRateLimiter(5, 1)      // burst 5, refill 1/sec per IP
-	s.postLimiter = newRateLimiter(20, 5) // burst 20, refill 5/sec per IP for public posts
+	s.sendLimiter = newRateLimiter(20, 5) // burst 20, refill 5/sec per IP for sends
 	s.sessions = newSessionStore(7 * 24 * time.Hour)
 	if err := s.initSecrets(); err != nil {
 		st.close()
