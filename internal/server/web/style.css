@@ -1,0 +1,636 @@
+/* notifpwa — the jas.pe palette and its editorial idiom.
+   Every value is taken from https://jas.pe/css/style.css so the two stylesheets
+   stay diffable; see docs/adr/ADR-006 for the two places this file departs from
+   it, and why. */
+
+:root {
+  color-scheme: light dark;
+
+  /* ---------- Raw palette (the brand swatches) ---------- */
+  --color-green:          #0a685a; /* Greenish */
+  --color-green-deep:     #095e51; /* Greenish Dark */
+  --color-green-deeper:   #085348; /* Greenish Darker */
+  --color-green-deepest:  #07493f; /* Greenish Darkest */
+  --color-dim-grey:       #686963; /* Dim Grey */
+  --color-teal:           #8aa29e; /* Muted Teal */
+  --color-teal-deep:      #6f8b86; /* Teal Deep */
+  --color-charcoal:       #3d5467; /* Charcoal Blue */
+  --color-coarse-wool:    #182027; /* Coarse Wool */
+  --color-smoke:          #f1edee; /* White Smoke */
+  --color-rule:           #d4d9d3; /* Teal-Grey hairline */
+
+  /* The only colour outside the swatch set. An error has to read as an error:
+     once the accent is green, "green" can no longer mean "something is wrong". */
+  --color-lobster-deep:   #c0424f;
+
+  /* ---------- Core roles ---------- */
+  --bg:       light-dark(var(--color-smoke), var(--color-coarse-wool));
+  --fg:       light-dark(var(--color-charcoal), var(--color-smoke));
+  --muted:    light-dark(var(--color-dim-grey), var(--color-teal));
+  --rule:     light-dark(var(--color-rule), var(--color-charcoal));
+  --accent:       light-dark(var(--color-green), var(--color-teal));
+  --accent-hover: light-dark(var(--color-green-deep), var(--color-teal-deep));
+  --accent-2:     light-dark(var(--color-teal-deep), var(--color-teal));
+  --ok:       light-dark(var(--color-teal-deep), var(--color-teal));
+  --err:      var(--color-lobster-deep);
+
+  /* A filled accent surface keeps the green in both schemes: green with a Smoke
+     label is 5.76:1 wherever it lands, whereas the dark-scheme accent above is
+     far too light to sit text on. Hence the split between the accent you read
+     and the accent you press. */
+  --accent-solid:       var(--color-green);
+  --accent-solid-hover: var(--color-green-deeper);
+  --on-accent:          var(--color-smoke);
+
+  /* Two grounds, both mixed from the swatches rather than invented: one for a
+     block of code, one for an inline span of it. */
+  --code-block:  light-dark(var(--color-charcoal), var(--color-coarse-wool));
+  --code-inline: color-mix(in srgb, var(--rule) 55%, var(--bg));
+
+  /* ---------- Per-element hooks ---------- */
+  --link:         var(--accent);
+  --link-hover:   var(--accent-hover);
+  --heading:      var(--accent);
+  --subtitle:     var(--muted);
+  --eyebrow:      var(--accent);
+  --selection-bg: var(--accent-2);
+  --selection-fg: var(--bg);
+  --focus-ring:   var(--accent);
+
+  /* ---------- Type ---------- */
+  --font-sans:  "Rethink Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono:  "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-serif: "Lora", Georgia, serif;
+
+  --frame-pad: 2.5rem;
+}
+
+/* ---------- Base ---------- */
+
+html, body {
+  min-height: 100%;
+  overflow-x: hidden;
+}
+
+html {
+  background-color: var(--bg);
+  color: var(--fg);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  font-family: var(--font-serif);
+  font-optical-sizing: auto;
+  font-size: 16px;
+  line-height: 1.6;
+  /* The frame: a centred column with a hairline down each edge. */
+  margin: 0 auto;
+  max-width: 42rem;
+  min-height: 100vh;
+  border-left: 1px solid var(--rule);
+  border-right: 1px solid var(--rule);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--link);
+  text-decoration: none;
+}
+
+a:hover { color: var(--link-hover); }
+
+::selection {
+  background: var(--selection-bg);
+  color: var(--selection-fg);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 2rem 0;
+}
+
+img { max-width: 100%; }
+
+/* ---------- Frame bands ---------- */
+
+.site-header {
+  font-family: var(--font-sans);
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 1.5rem var(--frame-pad);
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.95em;
+}
+
+.site-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  color: var(--fg);
+}
+
+.site-brand img {
+  width: 1.4em;
+  height: 1.4em;
+  margin: 0;
+}
+
+.content { padding: var(--frame-pad); }
+
+.site-footer {
+  font-family: var(--font-sans);
+  padding: var(--frame-pad);
+  border-top: 1px solid var(--rule);
+  font-size: 0.9em;
+}
+
+/* ---------- Headings and labels ---------- */
+
+h1, h2, h3, h4, h5, h6 {
+  color: var(--heading);
+  font-family: var(--font-sans);
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: clamp(1.9rem, 1.4rem + 2vw, 2.6rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.5rem;
+}
+
+h2 { font-size: 1.35em; font-weight: 600; }
+
+/* Uppercase mono is how this design says "this is a label, not content". One
+   class for the accent-coloured ones above a section, one muted for the ones
+   inside it. */
+.eyebrow,
+.label {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  margin: 0 0 0.75rem;
+}
+
+.eyebrow { color: var(--eyebrow); }
+.label   { color: var(--muted); }
+
+/* `sub` is the class app.js looks up to hide the call to action once
+   notifications are on, so the name is part of the contract with the script. */
+.subtitle,
+.sub {
+  font-family: var(--font-sans);
+  color: var(--subtitle);
+  font-size: 1.05em;
+  margin: 0 0 2rem;
+}
+
+.muted { color: var(--muted); }
+
+/* ---------- Prose ---------- */
+
+p {
+  margin: 0 0 1rem;
+  text-wrap: pretty;
+}
+
+/* ---------- Buttons ----------
+   The pill is the only raised thing in this design, and it is reserved for the
+   actions that change something. Rows and links stay flat, so the eye reads a
+   pill as "pressing this does a thing". */
+
+button {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--on-accent);
+  background: var(--accent-solid);
+  border: 1px solid var(--accent-solid);
+  border-radius: 999px;
+  padding: 0.6rem 1.4rem;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.action { margin: 2rem 0 0; }
+
+/* Once notifications are on, the script hides the button; the paragraph box it
+   sat in would otherwise keep its top margin and leave a gap above the status. */
+.action:has(button[hidden]) { display: none; }
+
+button:hover:not(:disabled) {
+  background: var(--accent-solid-hover);
+  border-color: var(--accent-solid-hover);
+}
+
+/* A disabled button has to stay legible where it sits, so it inverts to the
+   chip treatment rather than fading: opacity on a filled green pill turns into
+   a muddy smear against both grounds. */
+button:disabled {
+  color: var(--muted);
+  background: transparent;
+  border-color: var(--rule);
+  cursor: default;
+}
+
+button.secondary,
+.room-btn.ghost {
+  color: var(--fg);
+  background: transparent;
+  border-color: var(--rule);
+}
+
+button.secondary:hover,
+.room-btn.ghost:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: transparent;
+}
+
+/* ---------- Status lines ----------
+   The kind of a status is carried by the rule beside it, and the text itself
+   always stays in --fg: an error set in the error colour is 3.24:1 on Coarse
+   Wool, and a notification app must not have to choose between brand fidelity
+   and the operator being able to read a failure. */
+
+.status,
+.room-msg,
+.msg {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  margin: 1.25rem 0 0;
+  padding-left: 0.9rem;
+  border-left: 2px solid var(--rule);
+  color: var(--fg);
+}
+
+.status.ok, .room-msg.ok, .msg.ok { border-left-color: var(--ok); }
+.status.err, .room-msg.err, .msg.err { border-left-color: var(--err); }
+
+/* The admin message lines exist to be filled in, so an empty one must take up
+   no room and show no stray rule. */
+.msg:empty { display: none; }
+
+/* ---------- Notes ---------- */
+
+.note {
+  margin: 2rem 0 0;
+  padding: 0.1rem 1.25rem;
+  border-left: 2px solid var(--accent-2);
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.note .label { display: block; margin: 0.75rem 0 0.4rem; }
+.note b { color: var(--fg); font-weight: 600; }
+
+/* ---------- Rooms ----------
+   Hairline-ruled rows in the frame's list idiom: the room name is the row, and
+   its panel is an indented continuation of it rather than a box inside a box. */
+
+#room-list { border-top: 1px solid var(--rule); }
+
+.room { border-bottom: 1px solid var(--rule); }
+
+.room-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.room-toggle:hover { color: var(--accent); background: none; }
+
+.room-name { font-family: var(--font-mono); font-weight: 400; font-size: 0.9rem; }
+
+.room-flags { display: flex; align-items: center; gap: 0.6rem; }
+
+.room-lock { color: var(--muted); font-size: 0.8rem; line-height: 1; }
+
+.room-chevron {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-right: 1px solid var(--muted);
+  border-bottom: 1px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 0.18s ease;
+}
+
+.room-toggle[aria-expanded="true"] .room-chevron { transform: rotate(-135deg); }
+
+.room-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  margin: 0 0 1rem;
+  padding: 0.25rem 0 0.25rem 1.25rem;
+  border-left: 2px solid var(--rule);
+  /* display:flex would otherwise override the [hidden] attribute. */
+}
+
+.room-panel[hidden] { display: none; }
+
+.room-secret-state,
+.room-recent-label {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.room-secret-row { display: flex; align-items: center; gap: 0.75rem; }
+
+.room-secret-input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 0.3rem 0;
+}
+
+.room-secret-input:focus { border-bottom-color: var(--accent); }
+
+.room-btn { padding: 0.45rem 1rem; }
+
+.room-recent { font-size: 0.95rem; }
+
+.room-recent-item {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--rule);
+}
+
+.room-recent-item:first-child { border-top: 0; }
+
+.room-recent-when {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.room-recent-text { color: var(--fg); }
+
+.room-leave {
+  align-self: flex-start;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  color: var(--accent);
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  letter-spacing: 0;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.room-leave:hover { color: var(--accent-hover); background: none; text-decoration: underline; }
+
+.room-empty {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+#room-join { margin-top: 2rem; }
+
+#room-join .join { display: flex; align-items: flex-end; gap: 1rem; }
+
+#room-join input {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 0.3rem 0;
+}
+
+#room-join input:focus { border-bottom-color: var(--accent); }
+
+#room-join button { flex: none; }
+
+/* ---------- Admin ---------- */
+
+body.admin { max-width: 60rem; }
+
+.count {
+  font-family: var(--font-serif);
+  font-size: 2.6rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--fg);
+  margin: 0;
+}
+
+/* A panel is a band of the frame, not a card: it is separated by a hairline
+   across the column rather than by a box floating on the page. */
+.panel {
+  margin-top: 3.5rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--rule);
+}
+
+.panel h3 {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  margin: 0 0 1.25rem;
+}
+
+.panel h3.sub-label { margin-top: 2.75rem; }
+
+.panel p { margin: 1.25rem 0 0; }
+
+label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin: 1.5rem 0 0.4rem;
+}
+
+input[type="text"],
+textarea {
+  width: 100%;
+  max-width: 30rem;
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--fg);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  border-radius: 0;
+  padding: 0.35rem 0;
+}
+
+input[type="text"]:focus,
+textarea:focus { border-bottom-color: var(--accent); }
+
+input[type="file"] {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--muted);
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.row { display: flex; align-items: center; gap: 1.5rem; }
+.row > div { flex: 1; min-width: 0; }
+.row label { margin-top: 0; }
+
+img.preview {
+  width: 56px;
+  height: 56px;
+  flex: none;
+  margin: 0;
+  border: 1px solid var(--rule);
+}
+
+.token-list { border-top: 1px solid var(--rule); }
+
+.token-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.token-meta { min-width: 0; }
+.token-meta .name { font-family: var(--font-sans); font-weight: 600; }
+
+.token-meta .sub {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+}
+
+.secret-box {
+  margin-top: 1.5rem;
+  padding: 1.25rem 1.4rem;
+  background: var(--code-inline);
+  border: 1px solid var(--rule);
+}
+
+.secret-box .warn {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--err);
+  margin: 0;
+}
+
+.secret-box p + p { margin-top: 1rem; }
+
+.room-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--rule);
+}
+
+.room-row button { padding: 0.45rem 1rem; }
+
+/* ---------- Code ---------- */
+
+pre {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  margin: 1.5rem 0 0;
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--rule);
+  background: var(--code-block);
+  color: var(--color-smoke);
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--fg);
+  background: var(--code-inline);
+  padding: 0.12em 0.35em;
+  word-break: break-all;
+}
+
+pre code { background: none; padding: 0; }
+
+/* ---------- Utilities ---------- */
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 640px) {
+  body {
+    font-size: 15px;
+    max-width: 100%;
+    border-left: none;
+    border-right: none;
+  }
+
+  :root { --frame-pad: 1.25rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}

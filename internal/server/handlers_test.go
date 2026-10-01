@@ -378,3 +378,54 @@ func TestVersionDefaultsToDev(t *testing.T) {
 		t.Fatalf("appVersion() = %q, want dev", got)
 	}
 }
+
+// The stylesheet is a served asset, not something baked into the pages: both
+// pages link it, so the palette exists in exactly one place. A page that inlines
+// its own copy drifts the moment the other one is restyled.
+func TestStylesheetIsServedAsCss(t *testing.T) {
+	s := newTestApp(t)
+	req := httptest.NewRequest("GET", "/style.css", nil)
+	rec := httptest.NewRecorder()
+
+	s.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "text/css" {
+		t.Fatalf("content-type = %q, want text/css", ct)
+	}
+	if strings.TrimSpace(rec.Body.String()) == "" {
+		t.Fatalf("stylesheet body is empty")
+	}
+}
+
+// Both pages draw on the one stylesheet and neither carries its own copy: the
+// palette lives in /style.css, so a restyle cannot leave one page behind.
+func TestBothPagesUseTheSharedStylesheet(t *testing.T) {
+	s := newTestApp(t)
+
+	pages := []struct {
+		path string
+		auth bool
+	}{
+		{"/", false},
+		{"/admin", true},
+	}
+	for _, p := range pages {
+		req := httptest.NewRequest("GET", p.path, nil)
+		if p.auth {
+			req.Header.Set("Authorization", "Bearer "+s.InitialToken())
+		}
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, req)
+
+		body := rec.Body.String()
+		if !strings.Contains(body, `href="/style.css"`) {
+			t.Fatalf("%s does not link /style.css", p.path)
+		}
+		if strings.Contains(body, "<style>") {
+			t.Fatalf("%s still inlines a <style> block", p.path)
+		}
+	}
+}

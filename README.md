@@ -242,6 +242,8 @@ internal/server/     # the application package
   rooms.go           #   rooms: schema, membership, room broadcast + handlers
   mcp.go             #   the MCP endpoint: room-scoped server and the notify_operator tool
   web/               #   embedded PWA frontend (html/js/service worker/icon)
+                     #   style.css is the one stylesheet both pages link — the
+                     #   jas.pe palette and idiom; see docs/adr/ADR-006
 ```
 
 ## Development

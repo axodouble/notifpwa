@@ -5,187 +5,88 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.AppName}} — Admin</title>
   <link rel="icon" href="/icon.png">
+  <link rel="stylesheet" href="/style.css">
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f1edee">
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#182027">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Lora:ital,wght@0,400..700;1,400..600&family=Rethink+Sans:wght@400..700&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      color-scheme: light dark;
-
-      --color-lobster-deep:   #c0424f;
-      --color-lobster-deeper: #a5333f;
-      --color-dim-grey:       #686963;
-      --color-teal-deep:      #6f8b86;
-      --color-charcoal:       #3d5467;
-      --color-coarse-wool:    #182027;
-      --color-smoke:          #f1edee;
-      --color-rule:           #d4d9d3;
-
-      --bg:      light-dark(var(--color-smoke), var(--color-coarse-wool));
-      --surface: light-dark(#fbf9f9, #1e2831);
-      --inset:   light-dark(#f4f0f1, #141c22);
-      --fg:      light-dark(var(--color-charcoal), var(--color-smoke));
-      --muted:   var(--color-dim-grey);
-      --rule:    light-dark(var(--color-rule), var(--color-charcoal));
-      --accent:  var(--color-lobster-deep);
-      --accent-hover: var(--color-lobster-deeper);
-      --ok:      light-dark(#4f736d, #8aa29e);
-      --err:     var(--color-lobster-deep);
-      --code-bg: rgba(192, 66, 79, 0.06);
-
-      --font-sans:  "Rethink Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      --font-mono:  "DM Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-      --font-serif: "Lora", Georgia, serif;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; font: 400 15px/1.6 var(--font-sans);
-      background: var(--bg); color: var(--fg); padding: 32px 24px;
-      -webkit-font-smoothing: antialiased;
-    }
-    .wrap { max-width: 620px; margin: 0 auto; }
-    h1 {
-      font-family: var(--font-serif); font-weight: 600;
-      font-size: 26px; letter-spacing: -0.01em; margin: 0 0 24px;
-    }
-    .card {
-      background: var(--surface); border: 1px solid var(--rule); border-radius: 14px;
-      padding: 22px; margin-bottom: 18px;
-    }
-    .card h3 {
-      margin: 0 0 4px; font-family: var(--font-mono); font-weight: 500;
-      font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase;
-      color: var(--accent);
-    }
-    label {
-      display: block; font-family: var(--font-mono); font-size: 12px;
-      letter-spacing: 0.03em; color: var(--muted); margin: 16px 0 6px;
-    }
-    input[type=text], input[type=file], textarea {
-      width: 100%; padding: 11px 12px; border-radius: 9px; font: inherit;
-      background: var(--inset); border: 1px solid var(--rule); color: var(--fg);
-      transition: border-color 0.15s ease;
-    }
-    input[type=text]:focus, textarea:focus { border-color: var(--accent); }
-    :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    button {
-      margin-top: 16px; padding: 11px 18px; font-weight: 600; font-size: 14px;
-      font-family: var(--font-sans);
-      border: 0; border-radius: 10px; background: var(--accent); color: var(--color-smoke);
-      cursor: pointer; transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
-    }
-    button:hover { background: var(--accent-hover); }
-    button.secondary {
-      background: transparent; color: var(--fg);
-      border: 1px solid var(--rule);
-    }
-    button.secondary:hover { background: transparent; border-color: var(--accent); color: var(--accent); }
-    .row { display: flex; align-items: center; gap: 14px; }
-    img.preview { width: 56px; height: 56px; border-radius: 12px; border: 1px solid var(--rule); }
-    code, pre {
-      font-family: var(--font-mono); font-size: 13px;
-      background: var(--code-bg); border: 1px solid var(--rule); border-radius: 6px;
-    }
-    code { padding: 2px 6px; word-break: break-all; color: var(--accent); }
-    pre { padding: 14px; overflow-x: auto; color: var(--fg); }
-    .muted { color: var(--muted); font-size: 13px; }
-    .version { text-align: center; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.04em; margin: 4px 0 0; }
-    .count { font-family: var(--font-serif); font-size: 34px; font-weight: 600; line-height: 1; color: var(--fg); }
-    .msg { margin-top: 12px; font-size: 14px; min-height: 20px; }
-    .msg.ok { color: var(--ok); } .msg.err { color: var(--err); }
-    @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
-    .token-list { margin: 4px 0 0; }
-    .token-row {
-      display: flex; align-items: center; justify-content: space-between; gap: 12px;
-      padding: 12px 0; border-top: 1px solid var(--rule);
-    }
-    .token-row:first-child { border-top: 0; }
-    .token-meta { min-width: 0; }
-    .token-meta .name { font-weight: 600; }
-    .token-meta .sub { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
-    .secret-box {
-      margin-top: 14px; padding: 14px; border-radius: 9px;
-      background: var(--code-bg); border: 1px solid var(--accent);
-    }
-    .secret-box .warn { color: var(--accent); font-size: 13px; margin: 0 0 8px; }
-    .room-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; }
-    .room-row button { width: auto; }
-  </style>
 </head>
-<body>
-  <div class="wrap">
-    <h1>{{.AppName}} — Admin</h1>
+<body class="admin">
+  <header class="site-header">
+    <a class="site-brand" href="/"><img src="/icon.png" alt="">{{.AppName}}</a>
+    <span class="label">Admin</span>
+  </header>
 
-    <div class="card">
+  <main class="content">
+    <p class="eyebrow">Subscribed devices</p>
+    <p class="count" id="count">{{.Count}}</p>
+
+    <section class="panel">
+      <h3>Appearance</h3>
       <div class="row">
         <img class="preview" src="/icon.png" alt="">
         <div>
-          <div class="count" id="count">{{.Count}}</div>
-          <div class="muted">subscribed device(s)</div>
+          <label for="name">App name</label>
+          <input type="text" id="name" value="{{.AppName}}">
         </div>
       </div>
-    </div>
-
-    <div class="card">
-      <h3>Appearance</h3>
-      <label>App name</label>
-      <input type="text" id="name" value="{{.AppName}}">
-      <label>Icon (PNG, square — 512×512 recommended)</label>
+      <label for="icon">Icon (PNG, square — 512×512 recommended)</label>
       <input type="file" id="icon" accept="image/png,image/*">
-      <button id="save">Save</button>
-      <div class="msg" id="save-msg"></div>
-    </div>
+      <p><button id="save">Save</button></p>
+      <p class="msg" id="save-msg"></p>
+    </section>
 
-    <div class="card">
+    <section class="panel">
       <h3>Send a test to a room</h3>
-      <label>Room</label>
+      <label for="t-room">Room</label>
       <input type="text" id="t-room" placeholder="e.g. alerts">
-      <label>Secret (optional)</label>
+      <label for="t-secret">Secret (optional)</label>
       <input type="text" id="t-secret" placeholder="only if the device set a room secret">
-      <label>Title</label>
+      <label for="t-title">Title</label>
       <input type="text" id="t-title" value="Hello">
-      <label>Body</label>
+      <label for="t-body">Body</label>
       <input type="text" id="t-body" value="It works 🎉">
-      <button id="send">Send test</button>
-      <div class="msg" id="send-msg"></div>
-    </div>
+      <p><button id="send">Send test</button></p>
+      <p class="msg" id="send-msg"></p>
+    </section>
 
-    <div class="card">
+    <section class="panel">
       <h3>Devices</h3>
       <div id="devices" class="muted">Loading…</div>
-    </div>
+    </section>
 
-    <div class="card">
+    <section class="panel">
       <h3>Rooms</h3>
       <div id="rooms" class="muted">Loading…</div>
-    </div>
+    </section>
 
-    <div class="card">
+    <section class="panel">
       <h3>Tokens</h3>
       <p class="muted">Tokens grant admin panel + API access. Secrets are shown once at creation — copy them then.</p>
       <div id="tokens" class="token-list muted">Loading…</div>
 
-      <h3 style="margin-top:22px">New token</h3>
-      <label>Label</label>
+      <h3 class="sub-label">New token</h3>
+      <label for="tk-label">Label</label>
       <input type="text" id="tk-label" placeholder="e.g. CI">
-      <button id="tk-create">Create token</button>
-      <div class="msg" id="tk-msg"></div>
+      <p><button id="tk-create">Create token</button></p>
+      <p class="msg" id="tk-msg"></p>
       <div class="secret-box" id="tk-secret" hidden>
         <p class="warn">Copy this now — it won't be shown again.</p>
         <p><code id="tk-secret-val"></code></p>
         <pre id="tk-curl"></pre>
       </div>
-    </div>
+    </section>
 
-    <div class="card">
+    <section class="panel">
       <h3>Session</h3>
-      <button class="secondary" id="logout">Log out</button>
-    </div>
+      <p><button class="secondary" id="logout">Log out</button></p>
+    </section>
+  </main>
 
-    <p class="muted version">notifpwa {{.Version}}</p>
-  </div>
+  <footer class="site-footer">
+    <span class="muted mono">notifpwa {{.Version}}</span>
+  </footer>
 
   <script src="/admin.js"></script>
 </body>

@@ -16,6 +16,7 @@ func (s *Server) Handler() http.Handler {
 
 	// Public PWA surface.
 	mux.HandleFunc("GET /{$}", s.handleIndex)
+	mux.HandleFunc("GET /style.css", s.serveStatic("web/style.css", "text/css"))
 	mux.HandleFunc("GET /app.js", s.serveStatic("web/app.js", "text/javascript"))
 	mux.HandleFunc("GET /sw.js", s.serveStatic("web/sw.js", "text/javascript"))
 	mux.HandleFunc("GET /manifest.webmanifest", s.handleManifest)
